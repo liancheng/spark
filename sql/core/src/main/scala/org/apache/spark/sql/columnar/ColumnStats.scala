@@ -24,11 +24,12 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeMap, Attribute, Attri
 import org.apache.spark.sql.catalyst.types._
 
 private[sql] class ColumnStatisticsSchema(a: Attribute) extends Serializable {
-  val upperBound = AttributeReference(a.name + ".upperBound", a.dataType, nullable = false)()
-  val lowerBound = AttributeReference(a.name + ".lowerBound", a.dataType, nullable = false)()
-  val nullCount =  AttributeReference(a.name + ".nullCount", IntegerType, nullable = false)()
+  val upperBound = AttributeReference(a.name + ".upperBound", a.dataType, nullable = true)()
+  val lowerBound = AttributeReference(a.name + ".lowerBound", a.dataType, nullable = true)()
+  val nullCount = AttributeReference(a.name + ".nullCount", IntegerType, nullable = false)()
+  val count = AttributeReference(a.name + ".count", IntegerType, nullable = false)()
 
-  val schema = Seq(lowerBound, upperBound, nullCount)
+  val schema = Seq(lowerBound, upperBound, nullCount, count)
 }
 
 private[sql] class PartitionStatistics(tableSchema: Seq[Attribute]) extends Serializable {
@@ -68,6 +69,7 @@ private[sql] class ByteColumnStats extends ColumnStats {
   var upper = Byte.MinValue
   var lower = Byte.MaxValue
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -77,15 +79,17 @@ private[sql] class ByteColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class ShortColumnStats extends ColumnStats {
   var upper = Short.MinValue
   var lower = Short.MaxValue
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -95,15 +99,17 @@ private[sql] class ShortColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class LongColumnStats extends ColumnStats {
   var upper = Long.MinValue
   var lower = Long.MaxValue
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -113,15 +119,17 @@ private[sql] class LongColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class DoubleColumnStats extends ColumnStats {
   var upper = Double.MinValue
   var lower = Double.MaxValue
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -131,15 +139,17 @@ private[sql] class DoubleColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class FloatColumnStats extends ColumnStats {
   var upper = Float.MinValue
   var lower = Float.MaxValue
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -149,15 +159,17 @@ private[sql] class FloatColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class IntColumnStats extends ColumnStats {
   var upper = Int.MinValue
   var lower = Int.MaxValue
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -167,15 +179,17 @@ private[sql] class IntColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class StringColumnStats extends ColumnStats {
   var upper: String = null
   var lower: String = null
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -185,15 +199,17 @@ private[sql] class StringColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }
 
 private[sql] class TimestampColumnStats extends ColumnStats {
   var upper: Timestamp = null
   var lower: Timestamp = null
   var nullCount = 0
+  var count = 0
 
   override def gatherStats(row: Row, ordinal: Int): Unit = {
     if (!row.isNullAt(ordinal)) {
@@ -203,7 +219,8 @@ private[sql] class TimestampColumnStats extends ColumnStats {
     } else {
       nullCount += 1
     }
+    count += 1
   }
 
-  def collectedStatistics = Row(lower, upper, nullCount)
+  def collectedStatistics = Row(lower, upper, nullCount, count)
 }

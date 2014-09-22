@@ -160,6 +160,14 @@ private[sql] case class InMemoryColumnarTableScan(
     case GreaterThanOrEqual(l: Literal, a: AttributeReference) =>
       val aStats = relation.partitionStatistics.forAttribute(a)
       aStats.lowerBound <= l
+
+    case IsNull(a: AttributeReference) =>
+      val aStats = relation.partitionStatistics.forAttribute(a)
+      aStats.nullCount < aStats.count
+
+    case IsNotNull(a: AttributeReference) =>
+      val aStats = relation.partitionStatistics.forAttribute(a)
+      aStats.nullCount > 0
   }
 
   val partitionFilters = {
