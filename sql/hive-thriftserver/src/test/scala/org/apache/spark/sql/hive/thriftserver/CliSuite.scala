@@ -62,10 +62,10 @@ class CliSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
     def captureOutput(source: String)(line: String) {
       buffer += s"$source> $line"
-      if (line.contains(expectedAnswers(next.get()))) {
-        if (next.incrementAndGet() == expectedAnswers.size) {
-          foundAllExpectedAnswers.trySuccess(())
-        }
+      if (next.get() < expectedAnswers.size &&
+        line.startsWith(expectedAnswers(next.get())) &&
+        next.incrementAndGet() == expectedAnswers.size) {
+        foundAllExpectedAnswers.success(())
       }
     }
 
@@ -109,7 +109,7 @@ class CliSuite extends FunSuite with BeforeAndAfterAll with Logging {
     val dataFilePath =
       Thread.currentThread().getContextClassLoader.getResource("data/files/small_kv.txt")
 
-    runCliWithin(1.minute)(
+    runCliWithin(3.minute)(
       "CREATE TABLE hive_test(key INT, val STRING);"
         -> "OK",
       "SHOW TABLES;"
