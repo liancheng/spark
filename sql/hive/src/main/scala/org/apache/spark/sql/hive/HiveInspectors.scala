@@ -111,28 +111,69 @@ private[hive] trait HiveInspectors {
     case p: java.sql.Timestamp => p
   }
 
-  def unwrapData(data: Any, oi: ObjectInspector): Any = oi match {
-    case hvoi: HiveVarcharObjectInspector =>
-      if (data == null) null else hvoi.getPrimitiveJavaObject(data).getValue
-    case hdoi: HiveDecimalObjectInspector =>
-      if (data == null) null else BigDecimal(hdoi.getPrimitiveJavaObject(data).bigDecimalValue())
-    case pi: PrimitiveObjectInspector => pi.getPrimitiveJavaObject(data)
-    case li: ListObjectInspector =>
-      Option(li.getList(data))
-        .map(_.map(unwrapData(_, li.getListElementObjectInspector)).toSeq)
-        .orNull
-    case mi: MapObjectInspector =>
-      Option(mi.getMap(data)).map(
-        _.map {
-          case (k,v) =>
-            (unwrapData(k, mi.getMapKeyObjectInspector),
-              unwrapData(v, mi.getMapValueObjectInspector))
-        }.toMap).orNull
-    case si: StructObjectInspector =>
-      val allRefs = si.getAllStructFieldRefs
-      new GenericRow(
-        allRefs.map(r =>
-          unwrapData(si.getStructFieldData(data,r), r.getFieldObjectInspector)).toArray)
+  def dataUnwrapper(inspector: ObjectInspector): Any => Any = inspector match {
+    case oi: HiveVarcharObjectInspector =>
+      (data: Any) => if (data == null) null else oi.getPrimitiveJavaObject(data).getValue
+
+    case oi: HiveDecimalObjectInspector =>
+      (data: Any) =>
+        if (data == null) null else BigDecimal(oi.getPrimitiveJavaObject(data).bigDecimalValue())
+
+    case oi: PrimitiveObjectInspector =>
+      (data: Any) => if (data == null) null else oi.getPrimitiveJavaObject(data)
+
+    case oi: ListObjectInspector =>
+      val elementUnwrapper = dataUnwrapper(oi.getListElementObjectInspector)
+      (data: Any) => {
+        if (data == null) {
+          null
+        } else {
+          val list = oi.getList(data)
+          val builder = Seq.newBuilder[Any]
+          var i = 0
+          while (i < list.size()) {
+            builder += elementUnwrapper(list.get(i))
+            i += 1
+          }
+          builder.result()
+        }
+      }
+
+    case oi: MapObjectInspector =>
+      val keyUnwrapper = dataUnwrapper(oi.getMapKeyObjectInspector)
+      val valueUnwrapper = dataUnwrapper(oi.getMapValueObjectInspector)
+      (data: Any) => {
+        if (data == null) {
+          null
+        } else {
+          val entries = oi.getMap(data).entrySet()
+          val builder = Map.newBuilder[Any, Any]
+          val i =  entries.iterator()
+          while (i.hasNext) {
+            val entry = i.next()
+            builder += (keyUnwrapper(entry.getKey) -> valueUnwrapper(entry.getValue))
+          }
+          builder.result()
+        }
+      }
+
+    case oi: StructObjectInspector =>
+      val fieldRefs = oi.getAllStructFieldRefs
+      val fieldUnwrappers = fieldRefs.map(ref => dataUnwrapper(ref.getFieldObjectInspector))
+      (data: Any) => {
+        if (data == null) {
+          null
+        } else {
+          val mutableRow = new GenericMutableRow(fieldRefs.size())
+          var i = 0
+          while (i < fieldRefs.size()) {
+            val unwrapped = fieldUnwrappers(i)(oi.getStructFieldData(data, fieldRefs(i)))
+            if (unwrapped == null) mutableRow.setNullAt(i) else mutableRow(i) = unwrapped
+            i += 1
+          }
+          mutableRow
+        }
+      }
   }
 
   /** Converts native catalyst types to the types expected by Hive */

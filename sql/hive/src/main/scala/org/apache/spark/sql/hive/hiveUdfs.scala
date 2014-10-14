@@ -328,11 +328,13 @@ private[hive] case class HiveUdafFunction(
 
   private val returnInspector = function.init(GenericUDAFEvaluator.Mode.COMPLETE, inspectors)
 
+  private val returnUnwrapper = dataUnwrapper(returnInspector)
+
   // Cast required to avoid type inference selecting a deprecated Hive API.
   private val buffer =
     function.getNewAggregationBuffer.asInstanceOf[GenericUDAFEvaluator.AbstractAggregationBuffer]
 
-  override def eval(input: Row): Any = unwrapData(function.evaluate(buffer), returnInspector)
+  override def eval(input: Row): Any = returnUnwrapper(function.evaluate(buffer))
 
   @transient
   val inputProjection = new InterpretedProjection(exprs)
