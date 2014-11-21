@@ -18,20 +18,17 @@
 package org.apache.spark.sql.hive
 
 import java.io.IOException
-import java.util.{List => JList}
 
 import scala.util.parsing.combinator.RegexParsers
 
-import org.apache.hadoop.util.ReflectionUtils
-
 import org.apache.hadoop.hive.metastore.TableType
-import org.apache.hadoop.hive.metastore.api.FieldSchema
-import org.apache.hadoop.hive.metastore.api.{Table => TTable, Partition => TPartition}
-import org.apache.hadoop.hive.ql.metadata.{Hive, Partition, Table, HiveException}
+import org.apache.hadoop.hive.metastore.api.{FieldSchema, hive_metastoreConstants, Partition => TPartition, Table => TTable}
+import org.apache.hadoop.hive.ql.metadata.{Hive, HiveException, Partition, Table}
 import org.apache.hadoop.hive.ql.plan.CreateTableDesc
 import org.apache.hadoop.hive.serde.serdeConstants
-import org.apache.hadoop.hive.serde2.{Deserializer, SerDeException}
+import org.apache.hadoop.hive.serde2.Deserializer
 import org.apache.hadoop.hive.serde2.`lazy`.LazySimpleSerDe
+import org.apache.hadoop.util.ReflectionUtils
 
 import org.apache.spark.Logging
 import org.apache.spark.annotation.DeveloperApi
@@ -48,7 +45,6 @@ import org.apache.spark.util.Utils
 import scala.collection.JavaConversions._
 
 private[hive] class HiveMetastoreCatalog(hive: HiveContext) extends Catalog with Logging {
-  import org.apache.spark.sql.hive.HiveMetastoreTypes._
 
   /** Connection to hive metastore.  Usages should lock on `this`. */
   protected[hive] val client = Hive.get(hive.hiveconf)
@@ -102,146 +98,89 @@ private[hive] class HiveMetastoreCatalog(hive: HiveContext) extends Catalog with
       tableName: String,
       schema: Seq[Attribute],
       allowExisting: Boolean = false,
-      desc: Option[CreateTableDesc] = None) {
-    val hconf = hive.hiveconf
+      desc: Option[CreateTableDesc] = None): Unit = {
 
+    val hiveconf = hive.hiveconf
     val (dbName, tblName) = processDatabaseAndTableName(databaseName, tableName)
-    val tbl = new Table(dbName, tblName)
+    val table = new Table(dbName, tblName)
 
-    val crtTbl: CreateTableDesc = desc.getOrElse(null)
+    require(schema.nonEmpty || desc.nonEmpty)
 
-    // We should respect the passed in schema, unless it's not set
-    val hiveSchema: JList[FieldSchema] = if (schema == null || schema.isEmpty) {
-      crtTbl.getCols
-    } else {
-      schema.map(attr => new FieldSchema(attr.name, toMetastoreType(attr.dataType), ""))
-    }
-    tbl.setFields(hiveSchema)
+    desc.foreach { d =>
+      table.setFields(d.getCols)
 
-    // Most of code are similar with the DDLTask.createTable() of Hive,
-    if (crtTbl != null && crtTbl.getTblProps() != null) {
-      tbl.getTTable().getParameters().putAll(crtTbl.getTblProps())
-    }
+      Option(d.getTblProps).foreach(table.getTTable.getParameters.putAll)
+      Option(d.getPartCols).foreach(table.setPartCols)
+      Option(d.getStorageHandler).foreach(
+        table.setProperty(hive_metastoreConstants.META_TABLE_STORAGE, _))
 
-    if (crtTbl != null && crtTbl.getPartCols() != null) {
-      tbl.setPartCols(crtTbl.getPartCols())
-    }
-
-    if (crtTbl != null && crtTbl.getStorageHandler() != null) {
-      tbl.setProperty(
-        org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_STORAGE,
-        crtTbl.getStorageHandler())
-    }
-
-    /*
-     * We use LazySimpleSerDe by default.
-     *
-     * If the user didn't specify a SerDe, and any of the columns are not simple
-     * types, we will have to use DynamicSerDe instead.
-     */
-    if (crtTbl == null || crtTbl.getSerName() == null) {
-      val storageHandler = tbl.getStorageHandler()
-      if (storageHandler == null) {
-        logInfo(s"Default to LazySimpleSerDe for table $dbName.$tblName")
-        tbl.setSerializationLib(classOf[LazySimpleSerDe].getName())
-
-        import org.apache.hadoop.mapred.TextInputFormat
-        import org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
-        import org.apache.hadoop.io.Text
-
-        tbl.setInputFormatClass(classOf[TextInputFormat])
-        tbl.setOutputFormatClass(classOf[HiveIgnoreKeyTextOutputFormat[Text, Text]])
-        tbl.setSerializationLib("org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe")
-      } else {
-        val serDeClassName = storageHandler.getSerDeClass().getName()
-        logInfo(s"Use StorageHandler-supplied $serDeClassName for table $dbName.$tblName")
-        tbl.setSerializationLib(serDeClassName)
-      }
-    } else {
-      // let's validate that the serde exists
-      val serdeName = crtTbl.getSerName()
-      try {
-        val d = ReflectionUtils.newInstance(hconf.getClassByName(serdeName), hconf)
-        if (d != null) {
-          logDebug("Found class for $serdeName")
+      Option(d.getSerName).map { serde =>
+        // Validates whether the SerDe exists
+        try {
+          Option(ReflectionUtils.newInstance(hiveconf.getClassByName(serde), hiveconf)).foreach {
+            _ => logDebug(s"Found class for $serde")
+          }
+        } catch { case e: Exception =>
+          throw new HiveException(s"Cannot validate serde: $serde", e)
         }
-      } catch {
-        case e: SerDeException => throw new HiveException("Cannot validate serde: " + serdeName, e)
+        serde
+      }.orElse {
+        Option(table.getStorageHandler).map { handler =>
+          val serde = handler.getSerDeClass.getName
+          logInfo(s"User StorageHandler-supplied SerDe class $serde for table $dbName.$tblName")
+          serde
+        }
+      }.orElse {
+        // Falls back to LazySimpleSerDe by default
+        logInfo(s"Default to LazySimpleSerDe for table $dbName.$tblName")
+        Option(classOf[LazySimpleSerDe].getName)
+      }.foreach(table.setSerializationLib)
+
+      Option(d.getFieldDelim).foreach { delim =>
+        table.setSerdeParam(serdeConstants.FIELD_DELIM, delim)
+        table.setSerdeParam(serdeConstants.SERIALIZATION_FORMAT, delim)
       }
-      tbl.setSerializationLib(serdeName)
-    }
 
-    if (crtTbl != null && crtTbl.getFieldDelim() != null) {
-      tbl.setSerdeParam(serdeConstants.FIELD_DELIM, crtTbl.getFieldDelim())
-      tbl.setSerdeParam(serdeConstants.SERIALIZATION_FORMAT, crtTbl.getFieldDelim())
-    }
-    if (crtTbl != null && crtTbl.getFieldEscape() != null) {
-      tbl.setSerdeParam(serdeConstants.ESCAPE_CHAR, crtTbl.getFieldEscape())
-    }
+      Option(d.getFieldEscape).foreach(table.setSerdeParam(serdeConstants.ESCAPE_CHAR, _))
+      Option(d.getCollItemDelim).foreach(table.setSerdeParam(serdeConstants.COLLECTION_DELIM, _))
+      Option(d.getMapKeyDelim).foreach(table.setSerdeParam(serdeConstants.MAPKEY_DELIM, _))
+      Option(d.getLineDelim).foreach(table.setSerdeParam(serdeConstants.LINE_DELIM, _))
+      Option(d.getSerdeProps).foreach(_.foreach { case (k, v) => table.setSerdeParam(k, v) })
 
-    if (crtTbl != null && crtTbl.getCollItemDelim() != null) {
-      tbl.setSerdeParam(serdeConstants.COLLECTION_DELIM, crtTbl.getCollItemDelim())
-    }
-    if (crtTbl != null && crtTbl.getMapKeyDelim() != null) {
-      tbl.setSerdeParam(serdeConstants.MAPKEY_DELIM, crtTbl.getMapKeyDelim())
-    }
-    if (crtTbl != null && crtTbl.getLineDelim() != null) {
-      tbl.setSerdeParam(serdeConstants.LINE_DELIM, crtTbl.getLineDelim())
-    }
+      Option(d.getComment).foreach(table.setProperty("comment", _))
+      Option(d.getLocation).foreach(_ => HiveShim.setLocation(table, d))
+      Option(d.getSkewedColNames).foreach(table.setSkewedColNames)
+      Option(d.getSkewedColValues).foreach(table.setSkewedColValues)
 
-    if (crtTbl != null && crtTbl.getSerdeProps() != null) {
-      val iter = crtTbl.getSerdeProps().entrySet().iterator()
-      while (iter.hasNext()) {
-        val m = iter.next()
-        tbl.setSerdeParam(m.getKey(), m.getValue())
+      table.setStoredAsSubDirectories(d.isStoredAsSubDirectories)
+      table.setInputFormatClass(d.getInputFormat)
+      table.setOutputFormatClass(d.getOutputFormat)
+
+      if (d.isExternal) {
+        table.setProperty("EXTERNAL", "TRUE")
+        table.setTableType(TableType.EXTERNAL_TABLE)
       }
     }
 
-    if (crtTbl != null && crtTbl.getComment() != null) {
-      tbl.setProperty("comment", crtTbl.getComment())
-    }
-
-    if (crtTbl != null && crtTbl.getLocation() != null) {
-      HiveShim.setLocation(tbl, crtTbl)
-    }
-
-    if (crtTbl != null && crtTbl.getSkewedColNames() != null) {
-      tbl.setSkewedColNames(crtTbl.getSkewedColNames())
-    }
-    if (crtTbl != null && crtTbl.getSkewedColValues() != null) {
-      tbl.setSkewedColValues(crtTbl.getSkewedColValues())
-    }
-
-    if (crtTbl != null) {
-      tbl.setStoredAsSubDirectories(crtTbl.isStoredAsSubDirectories())
-      tbl.setInputFormatClass(crtTbl.getInputFormat())
-      tbl.setOutputFormatClass(crtTbl.getOutputFormat())
-    }
-
-    tbl.getTTable().getSd().setInputFormat(tbl.getInputFormatClass().getName())
-    tbl.getTTable().getSd().setOutputFormat(tbl.getOutputFormatClass().getName())
-
-    if (crtTbl != null && crtTbl.isExternal()) {
-      tbl.setProperty("EXTERNAL", "TRUE")
-      tbl.setTableType(TableType.EXTERNAL_TABLE)
-    }
+    table.getTTable.getSd.setInputFormat(table.getInputFormatClass.getName)
+    table.getTTable.getSd.setOutputFormat(table.getOutputFormatClass.getName)
 
     // set owner
     try {
-      tbl.setOwner(hive.hiveconf.getUser)
+      table.setOwner(hive.hiveconf.getUser)
     } catch {
       case e: IOException => throw new HiveException("Unable to get current user", e)
     }
 
     // set create time
-    tbl.setCreateTime((System.currentTimeMillis() / 1000).asInstanceOf[Int])
+    table.setCreateTime((System.currentTimeMillis() / 1000).asInstanceOf[Int])
 
     // TODO add bucket support
     // TODO set more info if Hive upgrade
 
     // create the table
     synchronized {
-      try client.createTable(tbl, allowExisting) catch {
+      try client.createTable(table, allowExisting) catch {
         case e: org.apache.hadoop.hive.metastore.api.AlreadyExistsException
           if allowExisting => // Do nothing
         case e: Throwable => throw e
