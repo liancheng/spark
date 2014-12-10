@@ -164,6 +164,10 @@ class HiveUdfSuite extends QueryTest {
 
     TestHive.reset()
   }
+
+  test("PMOD") {
+    sql("SELECT PMOD(key, 10) FROM src LIMIT 1").collect()
+  }
 }
 
 class TestPair(x: Int, y: Int) extends Writable with Serializable {

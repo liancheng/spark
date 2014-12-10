@@ -17,30 +17,35 @@
 
 package org.apache.spark.sql.hive
 
-import java.util.{ArrayList => JArrayList}
-import java.util.Properties
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
-import org.apache.hadoop.mapred.InputFormat
-import org.apache.hadoop.hive.common.StatsSetupConst
-import org.apache.hadoop.hive.common.`type`.{HiveDecimal}
-import org.apache.hadoop.hive.conf.HiveConf
-import org.apache.hadoop.hive.ql.Context
-import org.apache.hadoop.hive.ql.metadata.{Table, Hive, Partition}
-import org.apache.hadoop.hive.ql.plan.{CreateTableDesc, FileSinkDesc, TableDesc}
-import org.apache.hadoop.hive.ql.processors.CommandProcessorFactory
-import org.apache.hadoop.hive.serde2.typeinfo.{TypeInfo, DecimalTypeInfo, TypeInfoFactory}
-import org.apache.hadoop.hive.serde2.objectinspector.primitive.{HiveDecimalObjectInspector, PrimitiveObjectInspectorFactory}
-import org.apache.hadoop.hive.serde2.objectinspector.{PrimitiveObjectInspector, ObjectInspector}
-import org.apache.hadoop.hive.serde2.{Deserializer, ColumnProjectionUtils}
-import org.apache.hadoop.hive.serde2.{io => hiveIo}
-import org.apache.hadoop.{io => hadoopIo}
-import org.apache.spark.Logging
-import org.apache.spark.sql.catalyst.types.DecimalType
-import org.apache.spark.sql.catalyst.types.decimal.Decimal
+import java.io._
+import java.util.{Properties, ArrayList => JArrayList}
 
 import scala.collection.JavaConversions._
 import scala.language.implicitConversions
+
+import com.esotericsoftware.kryo.io.{Input, Output}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
+import org.apache.hadoop.hive.common.StatsSetupConst
+import org.apache.hadoop.hive.common.`type`.HiveDecimal
+import org.apache.hadoop.hive.conf.HiveConf
+import org.apache.hadoop.hive.ql.Context
+import org.apache.hadoop.hive.ql.exec.Utilities
+import org.apache.hadoop.hive.ql.metadata.{Hive, Partition, Table}
+import org.apache.hadoop.hive.ql.plan.{CreateTableDesc, FileSinkDesc, TableDesc}
+import org.apache.hadoop.hive.ql.processors.CommandProcessorFactory
+import org.apache.hadoop.hive.serde2.objectinspector.primitive.{HiveDecimalObjectInspector, PrimitiveObjectInspectorFactory}
+import org.apache.hadoop.hive.serde2.objectinspector.{ObjectInspector, PrimitiveObjectInspector}
+import org.apache.hadoop.hive.serde2.typeinfo.{DecimalTypeInfo, TypeInfo, TypeInfoFactory}
+import org.apache.hadoop.hive.serde2.{ColumnProjectionUtils, Deserializer, io => hiveIo}
+import org.apache.hadoop.mapred.InputFormat
+import org.apache.hadoop.{io => hadoopIo}
+
+import org.apache.spark.Logging
+import org.apache.spark.sql.catalyst.types.DecimalType
+import org.apache.spark.sql.catalyst.types.decimal.Decimal
+import org.apache.spark.util.Utils
+
 
 /**
  * A compatibility layer for interacting with Hive version 0.13.1.
@@ -282,5 +287,41 @@ class ShimFileSinkDesc(var dir: String, var tableInfo: TableDesc, var compressed
 
   def setCompressType(intermediateCompressType: String) {
     compressType = intermediateCompressType
+  }
+}
+
+class HiveFunctionWrapper(private var functionClassName: String) extends Externalizable {
+  private var _value = Option(functionClassName)
+    .map(Utils.getContextOrSparkClassLoader.loadClass(_).newInstance())
+    .orNull
+
+  // Zero argument constructor for serialization
+  def this() = this(null)
+
+  def value[T]: T = _value.asInstanceOf[T]
+
+  override def writeExternal(out: ObjectOutput): Unit = {
+    val stream = new ByteArrayOutputStream()
+    val output = new Output(stream)
+    Utilities.runtimeSerializationKryo.get().writeObject(output, value)
+    output.close()
+
+    val bytes = stream.toByteArray
+    out.writeUTF(functionClassName)
+    out.writeInt(bytes.length)
+    out.write(bytes, 0, bytes.length)
+  }
+
+  override def readExternal(in: ObjectInput): Unit = {
+    functionClassName = in.readUTF()
+    val functionClass = Utils.getContextOrSparkClassLoader.loadClass(functionClassName)
+
+    val length = in.readInt
+    val bytes = new Array[Byte](length)
+    in.read(bytes, 0, length)
+
+    val input = new Input(new ByteArrayInputStream(bytes))
+    _value = Utilities.runtimeSerializationKryo.get().readObject(input, functionClass)
+    input.close()
   }
 }

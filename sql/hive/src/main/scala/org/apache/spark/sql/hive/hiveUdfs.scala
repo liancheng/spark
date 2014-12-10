@@ -85,8 +85,6 @@ private[hive] abstract class HiveUdf extends Expression with Logging with HiveFu
 
   def nullable = true
 
-  lazy val function = createFunction[UDFType]()
-
   override def toString = s"$nodeName#$functionClassName(${children.mkString(",")})"
 }
 
@@ -94,6 +92,9 @@ private[hive] case class HiveSimpleUdf(functionClassName: String, children: Seq[
   extends HiveUdf with HiveInspectors {
 
   type UDFType = UDF
+
+  @transient
+  lazy val function = createFunction[UDFType]()
 
   @transient
   protected lazy val method =
@@ -148,12 +149,14 @@ private[hive] case class HiveGenericUdf(functionClassName: String, children: Seq
   extends HiveUdf with HiveInspectors {
   type UDFType = GenericUDF
 
+  private var function = new HiveFunctionWrapper(functionClassName)
+
   @transient
   protected lazy val argumentInspectors = children.map(toInspector)
 
   @transient
   protected lazy val returnInspector =
-    function.initializeAndFoldConstants(argumentInspectors.toArray)
+    function.value[UDFType].initializeAndFoldConstants(argumentInspectors.toArray)
 
   @transient
   protected lazy val isUDFDeterministic = {
@@ -164,8 +167,14 @@ private[hive] case class HiveGenericUdf(functionClassName: String, children: Seq
   override def foldable =
     isUDFDeterministic && returnInspector.isInstanceOf[ConstantObjectInspector]
 
+  override def makeCopy(newArgs: Array[AnyRef]): this.type = {
+    val newInstance = super.makeCopy(newArgs)
+    newInstance.function = function
+    newInstance
+  }
+
   @transient
-  protected lazy val deferedObjects =
+  protected lazy val deferredObjects =
     argumentInspectors.map(new DeferredObjectAdapter(_)).toArray[DeferredObject]
 
   lazy val dataType: DataType = inspectorToDataType(returnInspector)
@@ -175,13 +184,13 @@ private[hive] case class HiveGenericUdf(functionClassName: String, children: Seq
     var i = 0
     while (i < children.length) {
       val idx = i
-      deferedObjects(i).asInstanceOf[DeferredObjectAdapter].set(
+      deferredObjects(i).asInstanceOf[DeferredObjectAdapter].set(
         () => {
           children(idx).eval(input)
         })
       i += 1
     }
-    unwrap(function.evaluate(deferedObjects), returnInspector)
+    unwrap(function.value[UDFType].evaluate(deferredObjects), returnInspector)
   }
 }
 
@@ -262,14 +271,14 @@ private[hive] case class HiveGenericUdtf(
     children: Seq[Expression])
   extends Generator with HiveInspectors with HiveFunctionFactory {
 
-  @transient
-  protected lazy val function: GenericUDTF = createFunction()
+  protected val function = new HiveFunctionWrapper(functionClassName)
 
   @transient
   protected lazy val inputInspectors = children.map(_.dataType).map(toInspector)
 
   @transient
-  protected lazy val outputInspector = function.initialize(inputInspectors.toArray)
+  protected lazy val outputInspector =
+    function.value[GenericUDTF].initialize(inputInspectors.toArray)
 
   @transient
   protected lazy val udtInput = new Array[AnyRef](children.length)
@@ -298,8 +307,8 @@ private[hive] case class HiveGenericUdtf(
 
     val inputProjection = new InterpretedProjection(children)
     val collector = new UDTFCollector
-    function.setCollector(collector)
-    function.process(wrap(inputProjection(input), inputInspectors, udtInput))
+    function.value[GenericUDTF].setCollector(collector)
+    function.value[GenericUDTF].process(wrap(inputProjection(input), inputInspectors, udtInput))
     collector.collectRows()
   }
 
