@@ -79,12 +79,11 @@ class ColumnExpressionSuite extends QueryTest {
 
   test("star qualified by data frame object") {
     // This is not yet supported.
-    val df = testData.toDF
-    val goldAnswer = df.collect().toSeq
-    checkAnswer(df.select(df("*")), goldAnswer)
+    val goldAnswer = testData.collect().toSeq
+    checkAnswer(testData.select(testData("*")), goldAnswer)
 
-    val df1 = df.select(df("*"), lit("abcd").as("litCol"))
-    checkAnswer(df1.select(df("*")), goldAnswer)
+    val df = testData.select(testData("*"), lit("abcd").as("litCol"))
+    checkAnswer(df.select(testData("*")), goldAnswer)
   }
 
   test("star qualified by table name") {

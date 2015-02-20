@@ -112,14 +112,6 @@ trait DataFrame extends RDDApi[Row] with Serializable {
   def toSchemaRDD: DataFrame = this
 
   /**
-   * Returns the object itself.
-   * @group basic
-   */
-  // This is declared with parentheses to prevent the Scala compiler from treating
-  // `rdd.toDF("1")` as invoking this toDF and then apply on the returned DataFrame.
-  def toDF(): DataFrame = this
-
-  /**
    * Returns a new [[DataFrame]] with columns renamed. This can be quite convenient in conversion
    * from a RDD of tuples into a [[DataFrame]] with meaningful names. For example:
    * {{{

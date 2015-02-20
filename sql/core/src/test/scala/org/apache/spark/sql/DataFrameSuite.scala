@@ -409,7 +409,7 @@ class DataFrameSuite extends QueryTest {
   }
 
   test("addColumn") {
-    val df = testData.toDF().withColumn("newCol", col("key") + 1)
+    val df = testData.withColumn("newCol", col("key") + 1)
     checkAnswer(
       df,
       testData.collect().map { case Row(key: Int, value: String) =>
@@ -419,7 +419,7 @@ class DataFrameSuite extends QueryTest {
   }
 
   test("renameColumn") {
-    val df = testData.toDF().withColumn("newCol", col("key") + 1)
+    val df = testData.withColumn("newCol", col("key") + 1)
       .withColumnRenamed("value", "valueRenamed")
     checkAnswer(
       df,
