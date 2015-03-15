@@ -225,7 +225,7 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
   @transient protected[hive] lazy val sessionState: SessionState = {
     var state = SessionState.get()
     if (state == null) {
-      state = new SessionState(new HiveConf(classOf[SessionState]))
+      state = new SessionState(overrideHiveConf(new HiveConf(classOf[SessionState])))
       SessionState.start(state)
     }
     if (state.out == null) {
@@ -241,6 +241,9 @@ class HiveContext(sc: SparkContext) extends SQLContext(sc) {
     setConf(sessionState.getConf.getAllProperties)
     sessionState.getConf
   }
+
+  // Sub-classes of HiveContext for testing purposes can override Hive configurations here.
+  protected def overrideHiveConf(conf: HiveConf): HiveConf = conf
 
   override def setConf(key: String, value: String): Unit = {
     super.setConf(key, value)
