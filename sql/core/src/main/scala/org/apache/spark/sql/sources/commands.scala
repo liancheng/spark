@@ -283,7 +283,19 @@ private[sql] abstract class BaseWriterContainer(
   }
 
   private def newOutputCommitter(context: TaskAttemptContext): FileOutputCommitter = {
-    outputFormatClass.newInstance().getOutputCommitter(context) match {
+    val committer = {
+      val committerClass = context.getConfiguration.getClass(
+        "mapred.output.committer.class", null, classOf[FileOutputCommitter])
+
+      Option(committerClass).map { clazz =>
+        val ctor = clazz.getDeclaredConstructor(classOf[Path], classOf[TaskAttemptContext])
+        ctor.newInstance(new Path(outputPath), context)
+      }.getOrElse {
+        outputFormatClass.newInstance().getOutputCommitter(context)
+      }
+    }
+
+    committer match {
       case f: FileOutputCommitter => f
       case f => sys.error(
         s"FileOutputCommitter or its subclass is expected, but got a ${f.getClass.getName}.")
@@ -325,7 +337,7 @@ private[sql] abstract class BaseWriterContainer(
   }
 
   def abortJob(): Unit = {
-    outputCommitter.abortJob(jobContext, JobStatus.State.FAILED)
+    // outputCommitter.abortJob(jobContext, JobStatus.State.FAILED)
     logError(s"Job $jobId aborted.")
   }
 }
@@ -339,6 +351,7 @@ private[sql] class DefaultWriterContainer(
 
   override protected def initWriters(): Unit = {
     writer = outputWriterClass.newInstance()
+    taskAttemptContext.getConfiguration.set("spark.sql.sources.output.path", outputPath)
     writer.init(outputCommitter.getWorkPath.toString, dataSchema, taskAttemptContext)
   }
 
@@ -378,11 +391,14 @@ private[sql] class DynamicPartitionWriterContainer(
         DynamicPartitionWriterContainer.escapePathName(string)
       }
       s"/$col=$valueString"
-    }.mkString
+    }.mkString.stripPrefix(Path.SEPARATOR)
 
     outputWriters.getOrElseUpdate(partitionPath, {
-      val path = new Path(outputCommitter.getWorkPath, partitionPath.stripPrefix(Path.SEPARATOR))
+      val path = new Path(outputCommitter.getWorkPath, partitionPath)
       val writer = outputWriterClass.newInstance()
+      taskAttemptContext.getConfiguration.set(
+        "spark.sql.sources.output.path",
+        new Path(outputPath, partitionPath).toString)
       writer.init(path.toString, dataSchema, taskAttemptContext)
       writer
     })
