@@ -337,7 +337,7 @@ private[sql] abstract class BaseWriterContainer(
   }
 
   def abortJob(): Unit = {
-    // outputCommitter.abortJob(jobContext, JobStatus.State.FAILED)
+    outputCommitter.abortJob(jobContext, JobStatus.State.FAILED)
     logError(s"Job $jobId aborted.")
   }
 }
