@@ -19,7 +19,7 @@ cd $(dirname $0)/..
 BASEDIR=`pwd`
 cd -
 
-rm -rf $BASEDIR/gen-java
+rm -rf $BASEDIR/gen-java/org/apache/spark/sql/execution/datasources/parquet/test/thrift
 mkdir -p $BASEDIR/gen-java
 
 for input in `ls $BASEDIR/thrift/*.thrift`; do

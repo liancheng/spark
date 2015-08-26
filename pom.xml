@@ -1600,6 +1600,17 @@
         <scope>${parquet.test.deps.scope}</scope>
       </dependency>
       <dependency>
+        <groupId>org.apache.parquet</groupId>
+        <artifactId>parquet-thrift</artifactId>
+        <version>${parquet.version}</version>
+        <scope>${parquet.test.deps.scope}</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.thrift</groupId>
+        <artifactId>libthrift</artifactId>
+        <version>0.7.0</version>
+      </dependency>
+      <dependency>
         <groupId>com.twitter</groupId>
         <artifactId>parquet-hadoop-bundle</artifactId>
         <version>${hive.parquet.version}</version>

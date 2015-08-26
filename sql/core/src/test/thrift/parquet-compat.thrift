@@ -58,3 +58,7 @@ struct ParquetThriftCompat {
     21: required map<i32, string> intToStringColumn;
     22: required map<i32, list<Nested>> complexColumn;
 }
+
+struct ThriftListOfList {
+    1: required list<list<i32>> intListsColumn;
+}
