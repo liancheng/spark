@@ -570,6 +570,23 @@ abstract class HadoopFsRelationTest extends QueryTest with SQLTestUtils {
       df.write.format(dataSourceName).partitionBy("c", "d", "e").saveAsTable("t")
     }
   }
+
+  test("SPARK-9689 Refreshing") {
+    withTempPath { dir =>
+      val path = dir.getCanonicalPath
+      val df = sqlContext.range(0, 10).coalesce(1)
+
+      withTempTable("t") {
+        df.write.mode(SaveMode.Append).format(dataSourceName).save(path)
+        sqlContext.read.format(dataSourceName).load(path).registerTempTable("t")
+        sqlContext.sql("CACHE TABLE t")
+        checkAnswer(sqlContext.table("t"), df)
+
+        df.write.mode(SaveMode.Append).format(dataSourceName).save(path)
+        checkAnswer(sqlContext.table("t"), df.unionAll(df))
+      }
+    }
+  }
 }
 
 // This class is used to test SPARK-8578. We should not use any custom output committer when

@@ -27,7 +27,16 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK
 
 /** Holds a cached logical plan and its data */
-private[sql] case class CachedData(plan: LogicalPlan, cachedRepresentation: InMemoryRelation)
+private[sql] case class CachedData(
+    plan: LogicalPlan,
+    var cachedRepresentation: InMemoryRelation) {
+  private[sql] def recache(sqlContext: SQLContext): Unit = {
+    cachedRepresentation.uncache(blocking = true)
+    cachedRepresentation =
+      cachedRepresentation.copy(child = sqlContext.executePlan(plan).executedPlan)(null, null, null)
+  }
+}
+
 
 /**
  * Provides support in a SQLContext for caching query results and automatically using these cached
@@ -156,10 +165,10 @@ private[sql] class CacheManager(sqlContext: SQLContext) extends Logging {
    * function will over invalidate.
    */
   private[sql] def invalidateCache(plan: LogicalPlan): Unit = writeLock {
-    cachedData.foreach {
-      case data if data.plan.collect { case p if p.sameResult(plan) => p }.nonEmpty =>
-        data.cachedRepresentation.recache()
-      case _ =>
+    cachedData.foreach { case data =>
+      if (data.plan.find(_.sameResult(plan)).isDefined) {
+        data.recache(sqlContext)
+      }
     }
   }
 }

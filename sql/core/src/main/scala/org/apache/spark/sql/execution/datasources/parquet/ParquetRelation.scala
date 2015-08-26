@@ -153,7 +153,6 @@ private[sql] class ParquetRelation(
 
       this.paths.toSet == that.paths.toSet &&
         schemaEquality &&
-        this.maybeDataSchema == that.maybeDataSchema &&
         this.partitionColumns == that.partitionColumns
 
     case _ => false

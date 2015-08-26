@@ -150,6 +150,7 @@ private[sql] case class InsertIntoHadoopFsRelation(
           sqlContext.sparkContext.runJob(df.queryExecution.toRdd, writerContainer.writeRows _)
           writerContainer.commitJob()
           relation.refresh()
+          sqlContext.cacheManager.invalidateCache(LogicalRelation(relation))
         } catch { case cause: Throwable =>
           logError("Aborting job.", cause)
           writerContainer.abortJob()
