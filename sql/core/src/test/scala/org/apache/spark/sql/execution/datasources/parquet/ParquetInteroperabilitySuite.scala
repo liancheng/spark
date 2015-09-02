@@ -24,8 +24,6 @@ import org.apache.spark.sql.test.SharedSQLContext
 
 class ParquetInteroperabilitySuite extends ParquetCompatibilityTest with SharedSQLContext {
   test("parquet files with different physical schemas but share the same logical schema") {
-    import ParquetCompatibilityTest._
-
     // This test case writes two Parquet files, both representing the following Catalyst schema
     //
     //   StructType(
@@ -37,6 +35,8 @@ class ParquetInteroperabilitySuite extends ParquetCompatibilityTest with SharedS
     // The first Parquet file comes with parquet-avro style 2-level LIST-annotated group, while the
     // other one comes with parquet-protobuf style 1-level unannotated primitive field.
     withTempDir { dir =>
+      import DirectParquetWriter._
+
       val avroStylePath = new File(dir, "avro-style").getCanonicalPath
       val protobufStylePath = new File(dir, "protobuf-style").getCanonicalPath
 
@@ -48,18 +48,18 @@ class ParquetInteroperabilitySuite extends ParquetCompatibilityTest with SharedS
           |}
         """.stripMargin
 
-      writeDirect(avroStylePath, avroStyleSchema, { rc =>
-        rc.message {
-          rc.field("f", 0) {
-            rc.group {
-              rc.field("array", 0) {
+      writeDirect(avroStylePath, avroStyleSchema) { writer =>
+        message(writer) { rc =>
+          field(rc, "f") {
+            group(rc) {
+              field(rc, "array") {
                 rc.addInteger(0)
                 rc.addInteger(1)
               }
             }
           }
         }
-      })
+      }
 
       logParquetSchema(avroStylePath)
 
@@ -69,14 +69,14 @@ class ParquetInteroperabilitySuite extends ParquetCompatibilityTest with SharedS
           |}
         """.stripMargin
 
-      writeDirect(protobufStylePath, protobufStyleSchema, { rc =>
-        rc.message {
-          rc.field("f", 0) {
+      writeDirect(protobufStylePath, protobufStyleSchema) { writer =>
+        message(writer) { rc =>
+          field(rc, "f") {
             rc.addInteger(2)
             rc.addInteger(3)
           }
         }
-      })
+      }
 
       logParquetSchema(protobufStylePath)
 

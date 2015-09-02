@@ -21,8 +21,6 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.test.SharedSQLContext
 
 class ParquetThriftCompatibilitySuite extends ParquetCompatibilityTest with SharedSQLContext {
-  import ParquetCompatibilityTest._
-
   private val parquetFilePath =
     Thread.currentThread().getContextClassLoader.getResource("parquet-thrift-compat.snappy.parquet")
 
@@ -73,6 +71,8 @@ class ParquetThriftCompatibilitySuite extends ParquetCompatibilityTest with Shar
 
   test("SPARK-10136 list of primitive list") {
     withTempPath { dir =>
+      import DirectParquetWriter._
+
       val path = dir.getCanonicalPath
 
       // This Parquet schema is translated from the following Thrift schema:
@@ -90,20 +90,28 @@ class ParquetThriftCompatibilitySuite extends ParquetCompatibilityTest with Shar
            |}
          """.stripMargin
 
-      writeDirect(path, schema, { rc =>
-        rc.message {
-          rc.field("f", 0) {
-            rc.group {
-              rc.field("f_tuple", 0) {
-                rc.group {
-                  rc.field("f_tuple_tuple", 0) {
+      writeDirect(path, schema) { writer =>
+        message(writer) { rc =>
+          field(rc, "f") {
+            group(rc) {
+              field(rc, "f_tuple") {
+                group(rc) {
+                  field(rc, "f_tuple_tuple") {
                     rc.addInteger(0)
                     rc.addInteger(1)
                   }
                 }
+              }
+            }
+          }
+        }
 
-                rc.group {
-                  rc.field("f_tuple_tuple", 0) {
+        message(writer) { rc =>
+          field(rc, "f") {
+            group(rc) {
+              field(rc, "f_tuple") {
+                group(rc) {
+                  field(rc, "f_tuple_tuple") {
                     rc.addInteger(2)
                     rc.addInteger(3)
                   }
@@ -112,29 +120,7 @@ class ParquetThriftCompatibilitySuite extends ParquetCompatibilityTest with Shar
             }
           }
         }
-      }, { rc =>
-        rc.message {
-          rc.field("f", 0) {
-            rc.group {
-              rc.field("f_tuple", 0) {
-                rc.group {
-                  rc.field("f_tuple_tuple", 0) {
-                    rc.addInteger(4)
-                    rc.addInteger(5)
-                  }
-                }
-
-                rc.group {
-                  rc.field("f_tuple_tuple", 0) {
-                    rc.addInteger(6)
-                    rc.addInteger(7)
-                  }
-                }
-              }
-            }
-          }
-        }
-      })
+      }
 
       logParquetSchema(path)
 
