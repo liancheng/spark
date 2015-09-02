@@ -674,7 +674,7 @@ class ParquetSchemaSuite extends ParquetSchemaTest {
     """message root {
       |  optional group f1 (LIST) {
       |    repeated group bag {
-      |      optional int32 array_element;
+      |      optional int32 array;
       |    }
       |  }
       |}
