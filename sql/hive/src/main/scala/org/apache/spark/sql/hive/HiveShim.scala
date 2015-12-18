@@ -49,7 +49,7 @@ private[hive] object HiveShim {
   val UNLIMITED_DECIMAL_SCALE = 18
 
   /*
-   * This function in hive-0.13 become private, but we have to do this to walkaround hive bug
+   * This function in hive-0.13 become private, but we have to do this to workaround hive bug
    */
   private def appendReadColumnNames(conf: Configuration, cols: Seq[String]) {
     val old: String = conf.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR, "")

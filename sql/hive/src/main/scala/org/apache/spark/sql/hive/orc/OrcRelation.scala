@@ -24,7 +24,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars
 import org.apache.hadoop.hive.ql.io.orc.{OrcInputFormat, OrcOutputFormat, OrcSerde, OrcSplit, OrcStruct}
-import org.apache.hadoop.hive.serde2.objectinspector.SettableStructObjectInspector
+import org.apache.hadoop.hive.serde2.objectinspector.{StructObjectInspector, SettableStructObjectInspector}
 import org.apache.hadoop.hive.serde2.typeinfo.{StructTypeInfo, TypeInfoUtils}
 import org.apache.hadoop.io.{NullWritable, Writable}
 import org.apache.hadoop.mapred.{InputFormat => MapRedInputFormat, JobConf, OutputFormat => MapRedOutputFormat, RecordWriter, Reporter}
@@ -39,7 +39,7 @@ import org.apache.spark.rdd.{HadoopRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.datasources.PartitionSpec
-import org.apache.spark.sql.hive.{HiveContext, HiveInspectors, HiveMetastoreTypes, HiveShim}
+import org.apache.spark.sql.hive._
 import org.apache.spark.sql.sources.{Filter, _}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Row, SQLContext}
@@ -203,8 +203,8 @@ private[sql] class OrcRelation(
       filters: Array[Filter],
       inputPaths: Array[FileStatus],
       broadcastedConf: Broadcast[SerializableConfiguration]): RDD[InternalRow] = {
-    val output = StructType(requiredColumns.map(dataSchema(_))).toAttributes
-    OrcTableScan(output, this, filters, inputPaths).execute()
+    val nonPartitionKeyColumns = StructType(requiredColumns.map(dataSchema(_)))
+    OrcTableScan(nonPartitionKeyColumns, this, filters, inputPaths).execute()
   }
 
   override def prepareJobForWrite(job: Job): OutputWriterFactory = {
@@ -230,7 +230,7 @@ private[sql] class OrcRelation(
 }
 
 private[orc] case class OrcTableScan(
-    attributes: Seq[Attribute],
+    nonPartitionKeyColumns: StructType,
     @transient relation: OrcRelation,
     filters: Array[Filter],
     @transient inputPaths: Array[FileStatus])
@@ -240,52 +240,27 @@ private[orc] case class OrcTableScan(
   @transient private val sqlContext = relation.sqlContext
 
   private def addColumnIds(
-      output: Seq[Attribute],
+      output: StructType,
       relation: OrcRelation,
       conf: Configuration): Unit = {
     val ids = output.map(a => relation.dataSchema.fieldIndex(a.name): Integer)
-    val (sortedIds, sortedNames) = ids.zip(attributes.map(_.name)).sorted.unzip
+    val (sortedIds, sortedNames) = ids.zip(nonPartitionKeyColumns.map(_.name)).sorted.unzip
     HiveShim.appendReadColumns(conf, sortedIds, sortedNames)
   }
 
   // Transform all given raw `Writable`s into `InternalRow`s.
   private def fillObject(
-      path: String,
-      conf: Configuration,
+      structOI: StructObjectInspector,
       iterator: Iterator[Writable],
-      nonPartitionKeyAttrs: Seq[Attribute]): Iterator[InternalRow] = {
-    val deserializer = new OrcSerde
-    val maybeStructOI = OrcFileOperator.getObjectInspector(path, Some(conf))
-    val mutableRow = new SpecificMutableRow(attributes.map(_.dataType))
-    val unsafeProjection = UnsafeProjection.create(StructType.fromAttributes(nonPartitionKeyAttrs))
+      nonPartitionKeyColumns: StructType): Iterator[InternalRow] = {
+    val (fieldWrappers, fieldOrdinals) = nonPartitionKeyColumns.zipWithIndex.map {
+      case (column, ordinal) =>
+        new FieldWrapper(column.dataType, structOI.getStructFieldRef(column.name)) -> ordinal
+    }.unzip
 
-    // SPARK-8501: ORC writes an empty schema ("struct<>") to an ORC file if the file contains zero
-    // rows, and thus couldn't give a proper ObjectInspector.  In this case we just return an empty
-    // partition since we know that this file is empty.
-    maybeStructOI.map { soi =>
-      val (fieldRefs, fieldOrdinals) = nonPartitionKeyAttrs.zipWithIndex.map {
-        case (attr, ordinal) =>
-          soi.getStructFieldRef(attr.name) -> ordinal
-      }.unzip
-      val unwrappers = fieldRefs.map(unwrapperFor)
-      // Map each tuple to a row object
-      iterator.map { value =>
-        val raw = deserializer.deserialize(value)
-        var i = 0
-        while (i < fieldRefs.length) {
-          val fieldValue = soi.getStructFieldData(raw, fieldRefs(i))
-          if (fieldValue == null) {
-            mutableRow.setNullAt(fieldOrdinals(i))
-          } else {
-            unwrappers(i)(fieldValue, mutableRow, fieldOrdinals(i))
-          }
-          i += 1
-        }
-        unsafeProjection(mutableRow)
-      }
-    }.getOrElse {
-      Iterator.empty
-    }
+    val unsafeHiveIterator = GenerateUnsafeHiveIterator.generate(fieldWrappers)
+    unsafeHiveIterator.initialize(iterator, structOI, fieldOrdinals.toArray)
+    unsafeHiveIterator
   }
 
   def execute(): RDD[InternalRow] = {
@@ -301,7 +276,7 @@ private[orc] case class OrcTableScan(
     }
 
     // Sets requested columns
-    addColumnIds(attributes, relation, conf)
+    addColumnIds(nonPartitionKeyColumns, relation, conf)
 
     if (inputPaths.isEmpty) {
       // the input path probably be pruned, return an empty RDD.
@@ -324,7 +299,19 @@ private[orc] case class OrcTableScan(
 
     rdd.mapPartitionsWithInputSplit { case (split: OrcSplit, iterator) =>
       val writableIterator = iterator.map(_._2)
-      fillObject(split.getPath.toString, wrappedConf.value, writableIterator, attributes)
+      val structOI = {
+        val splitPath = split.getPath.toString
+        OrcFileOperator.getObjectInspector(splitPath, Some(wrappedConf.value))
+      }
+
+      // SPARK-8501: ORC writes an empty schema ("struct<>") to an ORC file if the file contains
+      // zero rows, and thus couldn't give a proper ObjectInspector.  In this case we just return an
+      // empty partition since we know that this file is empty.
+      structOI.map { oi =>
+        fillObject(oi, writableIterator, nonPartitionKeyColumns)
+      }.getOrElse {
+        Iterator.empty
+      }
     }
   }
 }

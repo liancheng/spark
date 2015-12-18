@@ -375,4 +375,12 @@ class OrcQuerySuite extends QueryTest with BeforeAndAfterAll with OrcTest {
       }
     }
   }
+
+  test("unsafe") {
+    withTempPath { dir =>
+      val path = dir.getCanonicalPath
+      sqlContext.range(5).selectExpr("id AS a", "CAST(id AS FLOAT) AS b").write.orc(path)
+      sqlContext.read.orc(path).show()
+    }
+  }
 }
