@@ -17,15 +17,18 @@
 
 package org.apache.spark.sql.execution.datasources.parquet
 
-import org.apache.parquet.filter2.predicate.Operators._
-import org.apache.parquet.filter2.predicate.{FilterPredicate, Operators}
+import org.apache.parquet.filter2.predicate.FilterApi._
+import org.apache.parquet.filter2.predicate.Operators.{Column => _, _}
+import org.apache.parquet.filter2.predicate.{FilterApi, FilterPredicate, Operators}
+import org.apache.parquet.io.api.Binary
 
-import org.apache.spark.sql.{Column, DataFrame, QueryTest, Row, SQLConf}
+import org.apache.spark.sql.{Column, DataFrame, QueryTest, Row, SQLConf, sources}
 import org.apache.spark.sql.catalyst.dsl.expressions._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.execution.datasources.{DataSourceStrategy, LogicalRelation}
 import org.apache.spark.sql.test.SharedSQLContext
+import org.apache.spark.sql.types._
 
 /**
  * A test suite that tests Parquet filter2 API based filter pushdown optimization.
@@ -39,7 +42,8 @@ import org.apache.spark.sql.test.SharedSQLContext
  * 2. `Tuple1(Option(x))` is used together with `AnyVal` types like `Int` to ensure the inferred
  *    data type is nullable.
  */
-class ParquetFilterSuite extends QueryTest with ParquetTest with SharedSQLContext {
+class ParquetFilterSuite
+  extends QueryTest with ParquetTest with SharedSQLContext with PredicateHelper {
 
   private def checkFilterPredicate(
       df: DataFrame,
@@ -379,6 +383,42 @@ class ParquetFilterSuite extends QueryTest with ParquetTest with SharedSQLContex
           sqlContext.read.parquet(path).where("not (a = 2 and b in ('1'))"),
           (1 to 5).map(i => Row(i, (i % 2).toString)))
       }
+    }
+  }
+
+  test("SPARK-12218 Converting conjunctions into Parquet filter predicates") {
+    val schema = StructType(Seq(
+      StructField("a", IntegerType, nullable = false),
+      StructField("b", StringType, nullable = true),
+      StructField("c", DoubleType, nullable = true)
+    ))
+
+    assertResult(Some(and(
+      lt(intColumn("a"), 10: Integer),
+      gt(doubleColumn("c"), 1.5: java.lang.Double)))
+    ) {
+      ParquetFilters.createFilter(
+        schema,
+        sources.And(
+          sources.LessThan("a", 10),
+          sources.GreaterThan("c", 1.5D)))
+    }
+
+    assertResult(None) {
+      ParquetFilters.createFilter(
+        schema,
+        sources.And(
+          sources.LessThan("a", 10),
+          sources.StringContains("b", "prefix")))
+    }
+
+    assertResult(None) {
+      ParquetFilters.createFilter(
+        schema,
+        sources.Not(
+          sources.And(
+            sources.GreaterThan("a", 1),
+            sources.StringContains("b", "prefix"))))
     }
   }
 
