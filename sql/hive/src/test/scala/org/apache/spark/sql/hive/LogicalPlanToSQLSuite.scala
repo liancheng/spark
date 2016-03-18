@@ -741,4 +741,15 @@ class LogicalPlanToSQLSuite extends SQLBuilderTest with SQLTestUtils {
   test("filter after subquery") {
     checkHiveQl("SELECT a FROM (SELECT key + 1 AS a FROM parquet_t1) t WHERE a > 5")
   }
+
+  test("SPARK-14002 should add subquery to aggregate child when necessary") {
+    checkHiveQl(
+      """SELECT COUNT(id)
+        |FROM
+        |(
+        |  SELECT id FROM t0
+        |) subq
+      """.stripMargin
+    )
+  }
 }

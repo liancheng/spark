@@ -466,6 +466,8 @@ class SQLBuilder(logicalPlan: LogicalPlan, sqlContext: SQLContext) extends Loggi
 
         case p: Project => p.copy(child = addSubqueryIfNeeded(p.child))
 
+        case a: Aggregate => a.copy(child = addSubqueryIfNeeded(a.child))
+
         // We will generate "SELECT ... FROM ..." for Window operator, so its child operator should
         // be able to put in the FROM clause, or we wrap it with a subquery.
         case w: Window => w.copy(child = addSubqueryIfNeeded(w.child))
