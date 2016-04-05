@@ -449,6 +449,13 @@ trait FileFormat {
       options: Map[String, String],
       dataSchema: StructType): OutputWriterFactory
 
+  /**
+   * Indicates whether this [[FileFormat]] is splittable. If it is, large input files may be split
+   * into pieces and get processed in parallel by different tasks. Otherwise, a single input file is
+   * always processed by a single task.
+   */
+  def isSplittable: Boolean = true
+
   def buildInternalScan(
       sqlContext: SQLContext,
       dataSchema: StructType,

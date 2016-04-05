@@ -135,11 +135,17 @@ private[sql] object FileSourceStrategy extends Strategy with Logging {
             s"max #files: $maxFileNumInPartition")
 
           val splitFiles = selectedPartitions.flatMap { partition =>
-            partition.files.flatMap { file =>
-              (0L to file.getLen by maxSplitBytes).map { offset =>
-                val remaining = file.getLen - offset
-                val size = if (remaining > maxSplitBytes) maxSplitBytes else remaining
-                PartitionedFile(partition.values, file.getPath.toUri.toString, offset, size)
+            if (files.fileFormat.isSplittable) {
+              partition.files.flatMap { file =>
+                (0L to file.getLen by maxSplitBytes).map { offset =>
+                  val remaining = file.getLen - offset
+                  val size = if (remaining > maxSplitBytes) maxSplitBytes else remaining
+                  PartitionedFile(partition.values, file.getPath.toUri.toString, offset, size)
+                }
+              }
+            } else {
+              partition.files.map { file =>
+                PartitionedFile(partition.values, file.getPath.toUri.toString, 0, file.getLen)
               }
             }
           }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)

@@ -391,3 +391,7 @@ class TestFileFormat extends FileFormat {
     (file: PartitionedFile) => { Iterator.empty }
   }
 }
+
+class NonSplittableTestFileFormat extends TestFileFormat {
+  override def isSplittable: Boolean = false
+}
