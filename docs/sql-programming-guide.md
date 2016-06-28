@@ -56,53 +56,21 @@ Throughout this document, we will often refer to Scala/Java Datasets of `Row`s a
 
 <div class="codetabs">
 <div data-lang="scala"  markdown="1">
-
 The entry point into all functionality in Spark is the [`SparkSession`](api/scala/index.html#org.apache.spark.sql.SparkSession) class. To create a basic `SparkSession`, just use `SparkSession.build()`:
 
-{% highlight scala %}
-import org.apache.spark.sql.SparkSession
-
-val spark = SparkSession.build()
-  .master("local")
-  .appName("Word Count")
-  .config("spark.some.config.option", "some-value")
-  .getOrCreate()
-
-// this is used to implicitly convert an RDD to a DataFrame.
-import spark.implicits._
-{% endhighlight %}
-
+{% include_example scala/org/apache/spark/examples/sql/SparkSessionExample.scala %}
 </div>
 
 <div data-lang="java" markdown="1">
-
 The entry point into all functionality in Spark is the [`SparkSession`](api/java/index.html#org.apache.spark.sql.SparkSession) class. To create a basic `SparkSession`, just use `SparkSession.build()`:
 
-{% highlight java %}
-import org.apache.spark.sql.SparkSession
-
-SparkSession spark = SparkSession.build()
-  .master("local")
-  .appName("Word Count")
-  .config("spark.some.config.option", "some-value")
-  .getOrCreate();
-{% endhighlight %}
+{% include_example java/org/apache/spark/examples/sql/JavaSparkSessionExample.java %}
 </div>
 
 <div data-lang="python"  markdown="1">
-
 The entry point into all functionality in Spark is the [`SparkSession`](api/python/pyspark.sql.html#pyspark.sql.SparkSession) class. To create a basic `SparkSession`, just use `SparkSession.build`:
 
-{% highlight python %}
-from pyspark.sql import SparkSession
-
-spark = SparkSession.build \
-  .master("local") \
-  .appName("Word Count") \
-  .config("spark.some.config.option", "some-value") \
-  .getOrCreate()
-{% endhighlight %}
-
+{% include_example python/sql/spark_session.py %}
 </div>
 
 <div data-lang="r"  markdown="1">
