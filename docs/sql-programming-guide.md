@@ -65,14 +65,14 @@ Throughout this document, we will often refer to Scala/Java Datasets of `Row`s a
 
 The entry point into all functionality in Spark is the [`SparkSession`](api/scala/index.html#org.apache.spark.sql.SparkSession) class. To create a basic `SparkSession`, just use `SparkSession.builder()`:
 
-{% include_example init_session scala/org/apache/spark/examples/sql/RDDRelation.scala %}
+{% include_example init_session scala/org/apache/spark/examples/sql/SparkSQLExample.scala %}
 </div>
 
 <div data-lang="java" markdown="1">
 
 The entry point into all functionality in Spark is the [`SparkSession`](api/java/index.html#org.apache.spark.sql.SparkSession) class. To create a basic `SparkSession`, just use `SparkSession.builder()`:
 
-{% include_example init_session java/org/apache/spark/examples/sql/JavaSparkSQL.java %}
+{% include_example init_session java/org/apache/spark/examples/sql/JavaSparkSQLExample.java %}
 </div>
 
 <div data-lang="python"  markdown="1">
@@ -107,14 +107,7 @@ from a Hive table, or from [Spark data sources](#data-sources).
 
 As an example, the following creates a DataFrame based on the content of a JSON file:
 
-{% highlight scala %}
-val spark: SparkSession // An existing SparkSession.
-val df = spark.read.json("examples/src/main/resources/people.json")
-
-// Displays the content of the DataFrame to stdout
-df.show()
-{% endhighlight %}
-
+{% include_example create_df scala/org/apache/spark/examples/sql/SparkSQLExample.scala %}
 </div>
 
 <div data-lang="java" markdown="1">
@@ -123,14 +116,7 @@ from a Hive table, or from [Spark data sources](#data-sources).
 
 As an example, the following creates a DataFrame based on the content of a JSON file:
 
-{% highlight java %}
-SparkSession spark = ...; // An existing SparkSession.
-Dataset<Row> df = spark.read().json("examples/src/main/resources/people.json");
-
-// Displays the content of the DataFrame to stdout
-df.show();
-{% endhighlight %}
-
+{% include_example create_df java/org/apache/spark/examples/sql/JavaSparkSQLExample.java %}
 </div>
 
 <div data-lang="python"  markdown="1">
@@ -176,110 +162,19 @@ Here we include some basic examples of structured data processing using Datasets
 
 <div class="codetabs">
 <div data-lang="scala"  markdown="1">
-{% highlight scala %}
-val spark: SparkSession // An existing SparkSession
-
-// Create the DataFrame
-val df = spark.read.json("examples/src/main/resources/people.json")
-
-// Show the content of the DataFrame
-df.show()
-// age  name
-// null Michael
-// 30   Andy
-// 19   Justin
-
-// Print the schema in a tree format
-df.printSchema()
-// root
-// |-- age: long (nullable = true)
-// |-- name: string (nullable = true)
-
-// Select only the "name" column
-df.select("name").show()
-// name
-// Michael
-// Andy
-// Justin
-
-// Select everybody, but increment the age by 1
-df.select(df("name"), df("age") + 1).show()
-// name    (age + 1)
-// Michael null
-// Andy    31
-// Justin  20
-
-// Select people older than 21
-df.filter(df("age") > 21).show()
-// age name
-// 30  Andy
-
-// Count people by age
-df.groupBy("age").count().show()
-// age  count
-// null 1
-// 19   1
-// 30   1
-{% endhighlight %}
+{% include_example untyped_ops scala/org/apache/spark/examples/sql/SparkSQLExample.scala %}
 
 For a complete list of the types of operations that can be performed on a Dataset refer to the [API Documentation](api/scala/index.html#org.apache.spark.sql.Dataset).
 
 In addition to simple column references and expressions, Datasets also have a rich library of functions including string manipulation, date arithmetic, common math operations and more. The complete list is available in the [DataFrame Function Reference](api/scala/index.html#org.apache.spark.sql.functions$).
-
-
 </div>
 
 <div data-lang="java" markdown="1">
-{% highlight java %}
-SparkSession spark = ...; // An existing SparkSession
-
-// Create the DataFrame
-Dataset<Row> df = spark.read().json("examples/src/main/resources/people.json");
-
-// Show the content of the DataFrame
-df.show();
-// age  name
-// null Michael
-// 30   Andy
-// 19   Justin
-
-// Print the schema in a tree format
-df.printSchema();
-// root
-// |-- age: long (nullable = true)
-// |-- name: string (nullable = true)
-
-// Select only the "name" column
-df.select("name").show();
-// name
-// Michael
-// Andy
-// Justin
-
-// Select everybody, but increment the age by 1
-df.select(df.col("name"), df.col("age").plus(1)).show();
-// name    (age + 1)
-// Michael null
-// Andy    31
-// Justin  20
-
-// Select people older than 21
-df.filter(df.col("age").gt(21)).show();
-// age name
-// 30  Andy
-
-// Count people by age
-df.groupBy("age").count().show();
-// age  count
-// null 1
-// 19   1
-// 30   1
-{% endhighlight %}
+{% include_example untyped_ops java/org/apache/spark/examples/sql/JavaSparkSQLExample.java %}
 
 For a complete list of the types of operations that can be performed on a Dataset refer to the [API Documentation](api/java/org/apache/spark/sql/Dataset.html).
 
 In addition to simple column references and expressions, Datasets also have a rich library of functions including string manipulation, date arithmetic, common math operations and more. The complete list is available in the [DataFrame Function Reference](api/java/org/apache/spark/sql/functions.html).
-
 </div>
 
 <div data-lang="python"  markdown="1">
@@ -402,19 +297,13 @@ In addition to simple column references and expressions, DataFrames also have a 
 <div data-lang="scala"  markdown="1">
 The `sql` function on a `SparkSession` enables applications to run SQL queries programmatically and returns the result as a `DataFrame`.
 
-{% highlight scala %}
-val spark = ... // An existing SparkSession
-val df = spark.sql("SELECT * FROM table")
-{% endhighlight %}
+{% include_example run_sql scala/org/apache/spark/examples/sql/SparkSQLExample.scala %}
 </div>
 
 <div data-lang="java" markdown="1">
 The `sql` function on a `SparkSession` enables applications to run SQL queries programmatically and returns the result as a `Dataset<Row>`.
 
-{% highlight java %}
-SparkSession spark = ... // An existing SparkSession
-Dataset<Row> df = spark.sql("SELECT * FROM table")
-{% endhighlight %}
+{% include_example run_sql java/org/apache/spark/examples/sql/JavaSparkSQLExample.java %}
 </div>
 
 <div data-lang="python"  markdown="1">
@@ -448,53 +337,11 @@ the bytes back into an object.
 
 <div class="codetabs">
 <div data-lang="scala"  markdown="1">
-
-{% highlight scala %}
-// Encoders for most common types are automatically provided by importing spark.implicits._
-val ds = Seq(1, 2, 3).toDS()
-ds.map(_ + 1).collect() // Returns: Array(2, 3, 4)
-
-// Encoders are also created for case classes.
-case class Person(name: String, age: Long)
-val ds = Seq(Person("Andy", 32)).toDS()
-
-// DataFrames can be converted to a Dataset by providing a class. Mapping will be done by name.
-val path = "examples/src/main/resources/people.json"
-val people = spark.read.json(path).as[Person]
-
-{% endhighlight %}
-
+{% include_example create_ds scala/org/apache/spark/examples/sql/SparkSQLExample.scala %}
 </div>
 
 <div data-lang="java" markdown="1">
-
-{% highlight java %}
-SparkSession spark = ... // An existing SparkSession
-
-// Encoders for most common types are provided in class Encoders.
-Dataset<Integer> ds = spark.createDataset(Arrays.asList(1, 2, 3), Encoders.INT());
-ds.map(new MapFunction<Integer, Integer>() {
-  @Override
-  public Integer call(Integer value) throws Exception {
-    return value + 1;
-  }
-}, Encoders.INT()); // Returns: [2, 3, 4]
-
-Person person = new Person();
-person.setName("Andy");
-person.setAge(32);
-
-// Encoders are also created for Java beans.
-Dataset<Person> ds = spark.createDataset(
-  Collections.singletonList(person),
-  Encoders.bean(Person.class)
-);
-
-// DataFrames can be converted to a Dataset by providing a class. Mapping will be done by name.
-String path = "examples/src/main/resources/people.json";
-Dataset<Person> people = spark.read().json(path).as(Encoders.bean(Person.class));
-{% endhighlight %}
-
+{% include_example create_ds java/org/apache/spark/examples/sql/JavaSparkSQLExample.java %}
 </div>
 </div>
 
