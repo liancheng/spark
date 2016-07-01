@@ -87,4 +87,69 @@ class ParquetInteroperabilitySuite extends ParquetCompatibilityTest with SharedS
           Row(Seq(2, 3))))
     }
   }
+
+  test("foo") {
+    import ParquetCompatibilityTest._
+
+    withTempDir { dir =>
+      val originalPath = new File(dir, "original").getCanonicalPath
+
+      val originalParquetSchema =
+        """message root {
+          |  required group f0 (LIST) {
+          |    repeated group array {
+          |      required int64 element (INT_64);
+          |    }
+          |  }
+          |}
+        """.stripMargin
+
+      writeDirect(originalPath, originalParquetSchema, { rc =>
+        rc.message {
+          rc.field("f0", 0) {
+            rc.group {
+              rc.field("array", 0) {
+                rc.group {
+                  rc.field("element", 0) {
+                    rc.addLong(42)
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      val df = sqlContext.read.parquet(originalPath)
+
+      df.printSchema()
+      // root
+      // |-- f0: array (nullable = false)
+      // |    |-- element: struct (containsNull = false)
+      // |    |    |-- element: long (nullable = false)
+
+      df.show()
+      // +------+
+      // |    f0|
+      // +------+
+      // |[[42]]|
+      // +------+
+
+      checkAnswer(df, Row(Array(Row(42))))
+
+      val sparkPath = new File(dir, "spark").getCanonicalPath
+      df.write.parquet(sparkPath)
+
+      val readBack = sqlContext.read.parquet(sparkPath)
+
+      readBack.printSchema()
+      // root
+      // |-- f0: array (nullable = false)
+      // |    |-- element: struct (containsNull = false)
+      // |    |    |-- element: long (nullable = false)
+
+      readBack.show()
+      // Crash
+    }
+  }
 }
