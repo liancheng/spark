@@ -19,7 +19,10 @@ package org.apache.spark.sql.catalyst.plans.logical
 
 import scala.collection.mutable.ArrayBuffer
 
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.MultiInstanceRelation
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression
 import org.apache.spark.sql.catalyst.plans._
@@ -766,4 +769,46 @@ case object OneRowRelation extends LeafNode {
    * [[LeafNode]]s must override this.
    */
   override lazy val statistics: Statistics = Statistics(sizeInBytes = 1)
+}
+
+case class BucketSpec(
+    numBuckets: Int,
+    bucketColumnNames: Seq[String],
+    sortColumnNames: Seq[String])
+
+case class InsertInto(
+    target: InsertInto.Destination,
+    query: LogicalPlan,
+    partitionSpec: Map[String, Option[String]],
+    bucketSpec: Option[BucketSpec],
+    mode: SaveMode)
+  extends LogicalPlan with Command {
+
+  override def output: Seq[Attribute] = Nil
+
+  override def children: Seq[LogicalPlan] = query :: Nil
+}
+
+object InsertInto {
+  trait Destination
+
+  case class ToTable(table: TableIdentifier) extends Destination
+
+  case class ToDataSource(
+      provider: String,
+      options: Map[String, String])
+    extends Destination
+}
+
+case class CreateTable(
+    table: CatalogTable,
+    partitionSpec: Map[String, Option[String]],
+    bucketSpec: Option[BucketSpec],
+    mode: SaveMode,
+    query: Option[LogicalPlan])
+  extends LogicalPlan with Command {
+
+  override def output: Seq[Attribute] = Nil
+
+  override def children: Seq[LogicalPlan] = query.toSeq
 }
