@@ -22,7 +22,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.sql.test.SQLTestData.DecimalData
-import org.apache.spark.sql.types.{Decimal, DecimalType}
+import org.apache.spark.sql.types.DecimalType
 
 case class Fact(date: Int, hour: Int, minute: Int, room_name: String, temp: Double)
 
@@ -445,10 +445,17 @@ class DataFrameAggregateSuite extends QueryTest with SharedSQLContext {
 
   test("collect_list_ex") {
     val df = Seq((1, 2), (2, 2), (3, 4)).toDF("a", "b")
-    df.select(collect_list_ex($"a")).show()
+
     checkAnswer(
       df.select(collect_list_ex($"a")),
       Seq(Row(Seq(1, 2, 3)))
+    )
+
+    checkAnswer(
+      df.groupBy($"b").agg(collect_list_ex($"a")),
+      Seq(
+        Row(2, Seq(1, 2)),
+        Row(4, Seq(3)))
     )
   }
 

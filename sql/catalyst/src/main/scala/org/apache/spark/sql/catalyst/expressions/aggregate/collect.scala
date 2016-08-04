@@ -101,17 +101,18 @@ case class CollectList(
 case class CollectListEx(
     child: Expression,
     mutableAggBufferOffset: Int = 0,
-    inputAggBufferOffset: Int = 0) extends Collect with ObjectAggregateFunction {
+    inputAggBufferOffset: Int = 0)
+  extends Collect with ObjectAggregateFunction {
 
   def this(child: Expression) = this(child, 0, 0)
 
-  override def aggBufferAttributes: Seq[AttributeReference] =
+  override lazy val aggBufferAttributes: Seq[AttributeReference] =
     AttributeReference("list", ArrayType(child.dataType, child.nullable))() :: Nil
 
-  override def inputAggBufferAttributes: Seq[AttributeReference] =
+  override lazy val inputAggBufferAttributes: Seq[AttributeReference] =
     aggBufferAttributes.map(_.newInstance())
 
-  override def supportsPartial: Boolean = true
+  override val supportsPartial: Boolean = true
 
   override def initialize(b: MutableRow): Unit = {
     b.setNullAt(mutableAggBufferOffset)
@@ -119,11 +120,17 @@ case class CollectListEx(
   }
 
   override def serializeAggregateBuffer(buffer: MutableRow): Unit = {
-    buffer(mutableAggBufferOffset) = new GenericArrayData(buffer)
+    buffer(mutableAggBufferOffset) = new GenericArrayData(this.buffer)
   }
 
   override def merge(buffer: MutableRow, input: InternalRow): Unit = {
-    this.buffer ++= input.getArray(inputAggBufferOffset).array
+    val arrayData = input.getArray(inputAggBufferOffset)
+
+    var i = 0
+    while (i < arrayData.numElements()) {
+      this.buffer += arrayData.get(i, child.dataType)
+      i += 1
+    }
   }
 
   override def withNewMutableAggBufferOffset(newMutableAggBufferOffset: Int): ImperativeAggregate =
@@ -132,7 +139,7 @@ case class CollectListEx(
   override def withNewInputAggBufferOffset(newInputAggBufferOffset: Int): ImperativeAggregate =
     copy(inputAggBufferOffset = newInputAggBufferOffset)
 
-  override def prettyName: String = "collect_list_ex"
+  override val prettyName: String = "collect_list_ex"
 
   override protected[this] val buffer: mutable.ArrayBuffer[Any] = mutable.ArrayBuffer.empty
 }

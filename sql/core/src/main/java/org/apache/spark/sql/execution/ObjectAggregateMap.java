@@ -30,6 +30,7 @@ public final class ObjectAggregateMap {
     if (aggregationBuffer == null) {
       aggregationBuffer = new SpecificMutableRow(aggregationBufferSchema);
       aggregationBuffer.copyFrom(emptyAggregationBuffer, aggregationBufferSchema);
+      hashMap.put(groupingKey, aggregationBuffer);
     }
 
     return aggregationBuffer;

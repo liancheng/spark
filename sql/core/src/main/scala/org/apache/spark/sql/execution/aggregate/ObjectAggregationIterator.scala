@@ -76,8 +76,9 @@ class ObjectAggregationIterator(
       // Fast path for partial aggregation, UnsafeRowJoiner is usually faster than projection
       val groupingAttributes = groupingExpressions.map(_.toAttribute)
       val joinedRow = new JoinedRow()
-      val resultProjection =
-        UnsafeProjection.create(resultExpressions, groupingAttributes ++ aggregateAttributes)
+      val resultProjection = UnsafeProjection.create(
+        groupingAttributes ++ aggregateAttributes,
+        groupingAttributes ++ aggregateAttributes)
 
       (currentGroupingKey: InternalRow, currentBuffer: MutableRow) => {
         resultProjection(joinedRow(currentGroupingKey, currentBuffer))
