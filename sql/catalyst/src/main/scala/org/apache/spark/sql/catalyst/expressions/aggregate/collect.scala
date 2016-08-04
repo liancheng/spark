@@ -96,6 +96,47 @@ case class CollectList(
   override protected[this] val buffer: mutable.ArrayBuffer[Any] = mutable.ArrayBuffer.empty
 }
 
+@ExpressionDescription(
+  usage = "_FUNC_(expr) - Collects and returns a list of non-unique elements.")
+case class CollectListEx(
+    child: Expression,
+    mutableAggBufferOffset: Int = 0,
+    inputAggBufferOffset: Int = 0) extends Collect with ObjectAggregateFunction {
+
+  def this(child: Expression) = this(child, 0, 0)
+
+  override def aggBufferAttributes: Seq[AttributeReference] =
+    AttributeReference("list", ArrayType(child.dataType, child.nullable))() :: Nil
+
+  override def inputAggBufferAttributes: Seq[AttributeReference] =
+    aggBufferAttributes.map(_.newInstance())
+
+  override def supportsPartial: Boolean = true
+
+  override def initialize(b: MutableRow): Unit = {
+    b.setNullAt(mutableAggBufferOffset)
+    super.initialize(b)
+  }
+
+  override def serializeAggregateBuffer(buffer: MutableRow): Unit = {
+    buffer(mutableAggBufferOffset) = new GenericArrayData(buffer)
+  }
+
+  override def merge(buffer: MutableRow, input: InternalRow): Unit = {
+    this.buffer ++= input.getArray(inputAggBufferOffset).array
+  }
+
+  override def withNewMutableAggBufferOffset(newMutableAggBufferOffset: Int): ImperativeAggregate =
+    copy(mutableAggBufferOffset = newMutableAggBufferOffset)
+
+  override def withNewInputAggBufferOffset(newInputAggBufferOffset: Int): ImperativeAggregate =
+    copy(inputAggBufferOffset = newInputAggBufferOffset)
+
+  override def prettyName: String = "collect_list_ex"
+
+  override protected[this] val buffer: mutable.ArrayBuffer[Any] = mutable.ArrayBuffer.empty
+}
+
 /**
  * Collect a list of unique elements.
  */

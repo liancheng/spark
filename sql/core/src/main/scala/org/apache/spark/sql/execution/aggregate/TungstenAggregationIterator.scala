@@ -32,9 +32,9 @@ import org.apache.spark.unsafe.KVIterator
  * An iterator used to evaluate aggregate functions. It operates on [[UnsafeRow]]s.
  *
  * This iterator first uses hash-based aggregation to process input rows. It uses
- * a hash map to store groups and their corresponding aggregation buffers. If we
- * this map cannot allocate memory from memory manager, it spill the map into disk
- * and create a new one. After processed all the input, then merge all the spills
+ * a hash map to store groups and their corresponding aggregation buffers. If
+ * this map cannot allocate memory from memory manager, it spills the map into disk
+ * and creates a new one. After processed all the input, then merge all the spills
  * together using external sorter, and do sort-based aggregation.
  *
  * The process has the following step:
@@ -127,7 +127,7 @@ class TungstenAggregationIterator(
   }
 
   // Creates a function used to generate output rows.
-  override protected def generateResultProjection(): (UnsafeRow, MutableRow) => UnsafeRow = {
+  override protected def generateResultProjection(): (InternalRow, MutableRow) => UnsafeRow = {
     val modes = aggregateExpressions.map(_.mode).distinct
     if (modes.nonEmpty && !modes.contains(Final) && !modes.contains(Complete)) {
       // Fast path for partial aggregation, UnsafeRowJoiner is usually faster than projection
@@ -137,8 +137,10 @@ class TungstenAggregationIterator(
       val bufferSchema = StructType.fromAttributes(bufferAttributes)
       val unsafeRowJoiner = GenerateUnsafeRowJoiner.create(groupingKeySchema, bufferSchema)
 
-      (currentGroupingKey: UnsafeRow, currentBuffer: MutableRow) => {
-        unsafeRowJoiner.join(currentGroupingKey, currentBuffer.asInstanceOf[UnsafeRow])
+      (currentGroupingKey: InternalRow, currentBuffer: MutableRow) => {
+        unsafeRowJoiner.join(
+          currentGroupingKey.asInstanceOf[UnsafeRow],
+          currentBuffer.asInstanceOf[UnsafeRow])
       }
     } else {
       super.generateResultProjection()
@@ -220,7 +222,7 @@ class TungstenAggregationIterator(
 
   // The iterator created from hashMap. It is used to generate output rows when we
   // are using hash-based aggregation.
-  private[this] var aggregationBufferMapIterator: KVIterator[UnsafeRow, UnsafeRow] = null
+  private[this] var aggregationBufferMapIterator: KVIterator[UnsafeRow, UnsafeRow] = _
 
   // Indicates if aggregationBufferMapIterator still has key-value pairs.
   private[this] var mapIteratorHasNext: Boolean = false
@@ -231,7 +233,7 @@ class TungstenAggregationIterator(
 
   // This sorter is used for sort-based aggregation. It is initialized as soon as
   // we switch from hash-based to sort-based aggregation. Otherwise, it is not used.
-  private[this] var externalSorter: UnsafeKVExternalSorter = null
+  private[this] var externalSorter: UnsafeKVExternalSorter = _
 
   /**
    * Switch to sort-based aggregation when the hash-based approach is unable to acquire memory.
@@ -282,16 +284,16 @@ class TungstenAggregationIterator(
 
   // The KVIterator containing input rows for the sort-based aggregation. It will be
   // set in switchToSortBasedAggregation when we switch to sort-based aggregation.
-  private[this] var sortedKVIterator: UnsafeKVExternalSorter#KVSorterIterator = null
+  private[this] var sortedKVIterator: UnsafeKVExternalSorter#KVSorterIterator = _
 
   // The grouping key of the current group.
-  private[this] var currentGroupingKey: UnsafeRow = null
+  private[this] var currentGroupingKey: UnsafeRow = _
 
   // The grouping key of next group.
-  private[this] var nextGroupingKey: UnsafeRow = null
+  private[this] var nextGroupingKey: UnsafeRow = _
 
   // The first row of next group.
-  private[this] var firstRowInNextGroup: UnsafeRow = null
+  private[this] var firstRowInNextGroup: UnsafeRow = _
 
   // Indicates if we has new group of rows from the sorted input iterator.
   private[this] var sortedInputHasNewGroup: Boolean = false
@@ -300,7 +302,7 @@ class TungstenAggregationIterator(
   private[this] val sortBasedAggregationBuffer: UnsafeRow = createNewAggregationBuffer()
 
   // The function used to process rows in a group
-  private[this] var sortBasedProcessRow: (MutableRow, InternalRow) => Unit = null
+  private[this] var sortBasedProcessRow: (MutableRow, InternalRow) => Unit = _
 
   // Processes rows in the current group. It will stop when it find a new group.
   private def processCurrentSortedGroup(): Unit = {

@@ -200,6 +200,8 @@ object functions {
    */
   def collect_list(e: Column): Column = withAggregateFunction { CollectList(e.expr) }
 
+  def collect_list_ex(e: Column): Column = withAggregateFunction { CollectListEx(e.expr) }
+
   /**
    * Aggregate function: returns a list of objects with duplicates.
    *

@@ -443,6 +443,15 @@ class DataFrameAggregateSuite extends QueryTest with SharedSQLContext {
     )
   }
 
+  test("collect_list_ex") {
+    val df = Seq((1, 2), (2, 2), (3, 4)).toDF("a", "b")
+    df.select(collect_list_ex($"a")).show()
+    checkAnswer(
+      df.select(collect_list_ex($"a")),
+      Seq(Row(Seq(1, 2, 3)))
+    )
+  }
+
   test("collect functions structs") {
     val df = Seq((1, 2, 2), (2, 2, 2), (3, 4, 1))
       .toDF("a", "x", "y")

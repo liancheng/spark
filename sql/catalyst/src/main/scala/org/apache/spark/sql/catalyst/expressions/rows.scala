@@ -182,6 +182,14 @@ abstract class MutableRow extends InternalRow {
    * CAN NOT call setNullAt() for decimal column on UnsafeRow, call setDecimal(i, null, precision).
    */
   def setDecimal(i: Int, value: Decimal, precision: Int) { update(i, value) }
+
+  def copyFrom(from: MutableRow, schema: StructType): Unit = {
+    var i = 0
+    while (i < numFields) {
+      this(i) = get(i, schema(i).dataType)
+      i += 1
+    }
+  }
 }
 
 /**
