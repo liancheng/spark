@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.execution.ObjectAggregateMap
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.execution.ObjectAggregateMap.AggregationBufferInitializer
 import org.apache.spark.unsafe.KVIterator
 
 class ObjectAggregationIterator(
@@ -46,9 +46,6 @@ class ObjectAggregationIterator(
   ///////////////////////////////////////////////////////////////////////////
   // Part 1: Initializing aggregate functions.
   ///////////////////////////////////////////////////////////////////////////
-
-  private val aggregateBufferSchema =
-    StructType.fromAttributes(aggregateFunctions.flatMap(_.aggBufferAttributes))
 
   ///////////////////////////////////////////////////////////////////////////
   // Part 2: Methods and fields used by setting aggregation buffer values,
@@ -88,10 +85,6 @@ class ObjectAggregationIterator(
     }
   }
 
-  // An aggregation buffer containing initial buffer values. It is used to
-  // initialize other aggregation buffers.
-  private[this] val initialAggregationBuffer: MutableRow = createNewAggregationBuffer()
-
   ///////////////////////////////////////////////////////////////////////////
   // Part 3: Methods and fields used by hash-based aggregation.
   ///////////////////////////////////////////////////////////////////////////
@@ -99,8 +92,9 @@ class ObjectAggregationIterator(
   // This is the hash map used for hash-based aggregation. It is backed by an
   // UnsafeFixedWidthAggregationMap and it is used to store
   // all groups and their corresponding aggregation buffers for hash-based aggregation.
-  private[this] val hashMap =
-    new ObjectAggregateMap(initialAggregationBuffer, aggregateBufferSchema)
+  private[this] val hashMap = new ObjectAggregateMap(new AggregationBufferInitializer() {
+    override def initialize(): MutableRow = createNewAggregationBuffer()
+  })
 
   // The function used to read and process input rows. When processing input rows,
   // it first uses hash-based aggregation by putting groups and their buffers in
@@ -121,7 +115,7 @@ class ObjectAggregationIterator(
       var i = 0
       while (inputIter.hasNext) {
         val newInput = inputIter.next()
-        val groupingKey = groupingProjection.apply(newInput)
+        val groupingKey = groupingProjection.apply(newInput).copy()
         val buffer: MutableRow = hashMap.getAggregationBufferByKey(groupingKey)
         processRow(buffer, newInput)
         i += 1
@@ -224,8 +218,6 @@ class ObjectAggregationIterator(
   def outputForEmptyGroupingKeyWithoutInput(): UnsafeRow = {
     if (groupingExpressions.isEmpty) {
       val defaultAggregationBuffer = createNewAggregationBuffer()
-      defaultAggregationBuffer.copyFrom(initialAggregationBuffer, aggregateBufferSchema)
-
       // We create an output row and copy it. So, we can free the map.
       val resultCopy = generateOutput(
         UnsafeRow.createFromByteArray(0, 0), defaultAggregationBuffer).copy()

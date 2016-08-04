@@ -7,29 +7,25 @@ import java.util.Map;
 
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.MutableRow;
-import org.apache.spark.sql.catalyst.expressions.SpecificMutableRow;
-import org.apache.spark.sql.types.StructType;
 import org.apache.spark.unsafe.KVIterator;
 
 public final class ObjectAggregateMap {
+  public interface AggregationBufferInitializer {
+    MutableRow initialize();
+  }
+
   private final Map<InternalRow, MutableRow> hashMap = new LinkedHashMap<>();
 
-  private final MutableRow emptyAggregationBuffer;
+  private final AggregationBufferInitializer aggregationBufferInitializer;
 
-  private final StructType aggregationBufferSchema;
-
-  public ObjectAggregateMap(
-      MutableRow emptyAggregationBuffer,
-      StructType aggregationBufferSchema) {
-    this.emptyAggregationBuffer = emptyAggregationBuffer;
-    this.aggregationBufferSchema = aggregationBufferSchema;
+  public ObjectAggregateMap(AggregationBufferInitializer aggregationBufferInitializer) {
+    this.aggregationBufferInitializer = aggregationBufferInitializer;
   }
 
   public MutableRow getAggregationBufferByKey(MutableRow groupingKey) {
     MutableRow aggregationBuffer = hashMap.get(groupingKey);
     if (aggregationBuffer == null) {
-      aggregationBuffer = new SpecificMutableRow(aggregationBufferSchema);
-      aggregationBuffer.copyFrom(emptyAggregationBuffer, aggregationBufferSchema);
+      aggregationBuffer = aggregationBufferInitializer.initialize();
       hashMap.put(groupingKey, aggregationBuffer);
     }
 

@@ -447,12 +447,12 @@ class DataFrameAggregateSuite extends QueryTest with SharedSQLContext {
     val df = Seq((1, 2), (2, 2), (3, 4)).toDF("a", "b")
 
     checkAnswer(
-      df.select(collect_list_ex($"a")),
+      df.coalesce(1).select(collect_list_ex($"a")),
       Seq(Row(Seq(1, 2, 3)))
     )
 
     checkAnswer(
-      df.groupBy($"b").agg(collect_list_ex($"a")),
+      df.coalesce(1).groupBy($"b").agg(collect_list_ex($"a")),
       Seq(
         Row(2, Seq(1, 2)),
         Row(4, Seq(3)))

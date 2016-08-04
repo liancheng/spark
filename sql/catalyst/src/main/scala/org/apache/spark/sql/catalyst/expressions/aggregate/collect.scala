@@ -115,23 +115,50 @@ case class CollectListEx(
   override val supportsPartial: Boolean = true
 
   override def initialize(b: MutableRow): Unit = {
-    b.setNullAt(mutableAggBufferOffset)
-    super.initialize(b)
+    b.update(mutableAggBufferOffset, mutable.ArrayBuffer.empty[Any])
   }
 
   override def serializeAggregateBuffer(buffer: MutableRow): Unit = {
-    buffer(mutableAggBufferOffset) = new GenericArrayData(this.buffer)
+    buffer(mutableAggBufferOffset) =
+      new GenericArrayData(getValueBufferFromAggregateBuffer(buffer).toArray)
+  }
+
+  override def update(b: MutableRow, input: InternalRow): Unit = {
+    val currentBuffer = getValueBufferFromAggregateBuffer(b)
+    currentBuffer += child.eval(input)
+    b(mutableAggBufferOffset) = currentBuffer
   }
 
   override def merge(buffer: MutableRow, input: InternalRow): Unit = {
+    val currentBuffer = getValueBufferFromAggregateBuffer(buffer)
     val arrayData = input.getArray(inputAggBufferOffset)
 
     var i = 0
     while (i < arrayData.numElements()) {
-      this.buffer += arrayData.get(i, child.dataType)
+      currentBuffer += arrayData.get(i, child.dataType)
       i += 1
     }
+
+    buffer(mutableAggBufferOffset) = currentBuffer
   }
+
+  override def eval(input: InternalRow): Any = {
+    val buffer = mutable.ArrayBuffer.empty[Any]
+    val arrayData = input.getArray(mutableAggBufferOffset)
+
+    var i = 0
+    while (i < arrayData.numElements()) {
+      buffer += arrayData.get(i, child.dataType)
+      i += 1
+    }
+
+    new GenericArrayData(buffer.toArray)
+  }
+
+  private def getValueBufferFromAggregateBuffer(aggBuffer: InternalRow): mutable.ArrayBuffer[Any] =
+    aggBuffer
+      .get(mutableAggBufferOffset, ObjectType(classOf[mutable.ArrayBuffer[Any]]))
+      .asInstanceOf[mutable.ArrayBuffer[Any]]
 
   override def withNewMutableAggBufferOffset(newMutableAggBufferOffset: Int): ImperativeAggregate =
     copy(mutableAggBufferOffset = newMutableAggBufferOffset)
