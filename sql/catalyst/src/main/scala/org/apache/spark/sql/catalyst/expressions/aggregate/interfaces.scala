@@ -219,7 +219,7 @@ sealed abstract class AggregateFunction extends Expression with ImplicitCastInpu
 }
 
 trait ObjectAggregateFunction {
-  def serializeAggregateBuffer(buffer: MutableRow): Unit = ()
+  def serializeAggregateBuffer(buffer: MutableRow): Unit
 }
 
 /**
