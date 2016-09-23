@@ -143,9 +143,16 @@ class FileScanRDD(
         if (isAsyncIOEnabled) {
           if (nextFile != null) {
             // Wait for the async task to complete
-            val file = ThreadUtils.awaitResult(nextFile, Duration.Inf)
-            InputFileNameHolder.setInputFileName(file.file.filePath)
-            currentIterator = file.iter
+            try {
+              val file = ThreadUtils.awaitResult(nextFile, Duration.Inf)
+              InputFileNameHolder.setInputFileName(file.file.filePath)
+              currentIterator = file.iter
+            } catch {
+              case e: org.apache.spark.SparkException =>
+                // Catch the exception thrown by awaitResult and rethrow the original exception
+                logError("Error in async I/O", e)
+                throw if (e.getCause != null) e.getCause else e
+            }
             // Asynchronously start the next file.
             nextFile = prepareNextFile()
             hasNext
