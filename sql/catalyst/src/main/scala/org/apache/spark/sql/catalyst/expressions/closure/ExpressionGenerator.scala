@@ -16,11 +16,11 @@ import org.apache.xbean.asm5.Type._
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.caseSensitiveResolution
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
-import org.apache.spark.sql.catalyst.expressions.{Add, BitwiseAnd, BitwiseOr, BitwiseXor, Cast => CastExpression, CreateNamedStruct, Divide, EqualNullSafe, Expression, ExtractValue, GreaterThan, GreaterThanOrEqual, If => IfExpression, LeafExpression, LessThan, LessThanOrEqual, Literal, Multiply, Not, Remainder, Subtract, Unevaluable}
+import org.apache.spark.sql.catalyst.expressions.{Add, BinaryArithmetic, BitwiseAnd, BitwiseOr, BitwiseXor, Cast => CastExpression, CreateNamedStruct, EqualNullSafe, Expression, ExtractValue, GreaterThan, GreaterThanOrEqual, If => IfExpression, LeafExpression, LessThan, LessThanOrEqual, Literal, Multiply, Not, Remainder, Subtract, Unevaluable}
 import org.apache.spark.sql.catalyst.expressions.closure.TypeOps.typeToTypeOps
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodegenFallback, ExprCode}
 import org.apache.spark.sql.catalyst.expressions.objects.AssertNotNull
-import org.apache.spark.sql.types.{AtomicType, DataType, NullType, ObjectType, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AtomicType, DataType, DoubleType, FloatType, IntegerType, LongType, NullType, ObjectType, StructType, TypeCollection}
 
 /**
  * Translates the Node tree returned from [[ByteCodeParser]] to Spark sql expressions.
@@ -106,13 +106,7 @@ class ExpressionGenerator {
           case "+" => Add(visit(left), visit(right))
           case "-" => Subtract(visit(left), visit(right))
           case "*" => Multiply(visit(left), visit(right))
-          case "/" =>
-            checkCast(
-              Divide(
-                checkCast(visit(left), left.dataType, DOUBLE_TYPE),
-                checkCast(visit(right), right.dataType, DOUBLE_TYPE)),
-              DOUBLE_TYPE,
-              dataType)
+          case "/" => DivideLikeJVM(visit(left), visit(right))
           case "<" => LessThan(visit(left), visit(right))
           case ">" => GreaterThan(visit(left), visit(right))
           case "<=" => LessThanOrEqual(visit(left), visit(right))
@@ -182,7 +176,7 @@ class ExpressionGenerator {
     val flattenExpressions: Seq[Expression] = resolvedExpression match {
       case create: CreateNamedStruct =>
         val (_, valueExpressions) =
-        create.children.grouped(2).map { case Seq(name, value) => (name, value) }.toList.unzip
+          create.children.grouped(2).map { case Seq(name, value) => (name, value) }.toList.unzip
         valueExpressions
       case struct if struct.dataType.isInstanceOf[StructType] =>
         val dataType = struct.dataType.asInstanceOf[StructType]
@@ -246,7 +240,7 @@ class ExpressionGenerator {
 
   private def translateMethodNameToFieldName(clazz: String, getter: String): String = clazz match {
     // Scala compiler may generate function call like _1$spI for field access "_1"
-    case "scala.Tuple" if getter.matches("^_[0-9][0-9]?\\$.*") =>
+    case _ if clazz.startsWith("scala.Tuple") && getter.matches("^_[0-9][0-9]?\\$.*") =>
       getter.substring(0, getter.indexOf("$"))
     // For other cases, the getter name like the case class field name can be directly
     // mapped to Dataset column field name.
@@ -411,8 +405,50 @@ case class NPEOnNull(
          |  throw new NullPointerException();
          |}
          |
-           |$childGen
+         |${childGen.code}
          """.stripMargin
     ev.copy(code = code, isNull = "false", value = childGen.value)
+  }
+}
+
+/**
+ * Behaves same as the divide (/) operator in JVM. For example, the following statement throws
+ * ArithmeticException.
+ * {{{
+ *   6 / 0
+ * }}}
+ */
+case class DivideLikeJVM(left: Expression, right: Expression) extends BinaryArithmetic {
+
+  override def inputType: AbstractDataType =
+    TypeCollection(IntegerType, LongType, FloatType, DoubleType)
+
+  override def nullable: Boolean = false
+
+  override def symbol: String = "/"
+
+  override def eval(input: InternalRow): Any = {
+    val input1 = left.eval(input)
+    val input2 = right.eval(input)
+    input1 match {
+      case f: Float => f / input2.asInstanceOf[java.lang.Float]
+      case i: Integer => i / input2.asInstanceOf[java.lang.Integer]
+      case l: Long => l / input2.asInstanceOf[java.lang.Long]
+      case d: Double => d / input2.asInstanceOf[java.lang.Double]
+    }
+  }
+
+  override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode = {
+    val eval1 = left.genCode(ctx)
+    val eval2 = right.genCode(ctx)
+
+    val javaType = ctx.javaType(dataType)
+    ev.copy(code =
+      s"""
+         ${eval1.code}
+         ${eval2.code}
+         boolean ${ev.isNull} = false;
+         $javaType ${ev.value} = ($javaType)(${eval1.value} $symbol ${eval2.value});
+       """)
   }
 }

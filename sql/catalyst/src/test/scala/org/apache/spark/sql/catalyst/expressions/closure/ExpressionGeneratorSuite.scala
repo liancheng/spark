@@ -56,36 +56,11 @@ class ExpressionGeneratorSuite extends SparkFunSuite {
       expression[T](mul(arg[T], constant)),
       Multiply(UnresolvedAttribute("value"), literal(constant.value)))
 
-    classTag[T].runtimeClass match {
-      case x if x == classOf[Double] =>
-        // Should not cast the div operand to Double if the input type is already Double
-        assertEqual(
-          expression[T](div(arg[T], constant)),
-          Divide(
-            UnresolvedAttribute("value"),
-            literal(constant.value)))
-      case x if x == classOf[Char] =>
-        // Catalyst doesn't have Char type, we need to simulate Char with (integer & 0xfffff)
-        assertEqual(
-          expression[T](div(arg[T], constant)),
-          BitwiseAnd(
-            CastExpression(
-              Divide(
-                CastExpression(UnresolvedAttribute("value"), DoubleType),
-                CastExpression(literal(constant.value), DoubleType)),
-              constant.dataType.sqlType),
-            Literal(0xffff)
-          )
-        )
-      case _ =>
-        assertEqual(
-          expression[T](div(arg[T], constant)),
-          CastExpression(
-            Divide(
-              CastExpression(UnresolvedAttribute("value"), DoubleType),
-              CastExpression(literal(constant.value), DoubleType)),
-            constant.dataType.sqlType))
-    }
+    assertEqual(
+      expression[T](div(arg[T], constant)),
+      DivideLikeJVM(
+        UnresolvedAttribute("value"),
+        literal(constant.value)))
 
     assertEqual(
       expression[T](rem(arg[T], constant)),
