@@ -120,7 +120,7 @@ abstract class QueryTest extends PlanTest {
           throw ae
         }
     }
-    checkJsonFormat(analyzedDS)
+    // checkJsonFormat(analyzedDS)
     assertEmptyMissingInput(analyzedDS)
 
     try ds.collect() catch {
@@ -168,7 +168,7 @@ abstract class QueryTest extends PlanTest {
         }
     }
 
-    checkJsonFormat(analyzedDF)
+    // checkJsonFormat(analyzedDF)
 
     assertEmptyMissingInput(analyzedDF)
 

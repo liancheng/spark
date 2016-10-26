@@ -26,6 +26,7 @@ import scala.util.control.NonFatal
 
 import com.fasterxml.jackson.core.JsonFactory
 import org.apache.commons.lang3.StringUtils
+import org.apache.hadoop.classification.InterfaceStability
 
 import org.apache.spark.annotation.{DeveloperApi, Experimental}
 import org.apache.spark.api.java.JavaRDD
@@ -43,13 +44,14 @@ import org.apache.spark.sql.catalyst.expressions.objects.Invoke
 import org.apache.spark.sql.catalyst.optimizer.CombineUnions
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, PartitioningCollection}
 import org.apache.spark.sql.catalyst.util.usePrettyExpression
 import org.apache.spark.sql.execution.{FileRelation, LogicalRDD, QueryExecution, SQLExecution}
 import org.apache.spark.sql.execution.command.{CreateViewCommand, ExplainCommand}
 import org.apache.spark.sql.execution.datasources.{CreateTableUsingAsSelect, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.json.JacksonGenerator
 import org.apache.spark.sql.execution.python.EvaluatePython
-import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery}
+import org.apache.spark.sql.streaming.DataStreamWriter
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.util.Utils
@@ -465,6 +467,48 @@ class Dataset[T] private[sql](
    */
   @Experimental
   def isStreaming: Boolean = logicalPlan.isStreaming
+
+  /**
+   * Returns a checkpointed version of this Dataset.
+   *
+   * @param eager When true, materializes the underlying checkpointed RDD eagerly.
+   *
+   * @group basic
+   * @since 2.1.0
+   */
+  @Experimental
+  @InterfaceStability.Evolving
+  def checkpoint(eager: Boolean = false): Dataset[T] = {
+    val internalRdd = queryExecution.toRdd.map(_.copy())
+    internalRdd.checkpoint()
+
+    if (eager) {
+      internalRdd.count()
+    }
+
+    val physicalPlan = queryExecution.executedPlan
+
+    // Takes the first leaf partitioning whenever we see a `PartitioningCollection`. Otherwise the
+    // size of `PartitioningCollection` may grow exponentially for queries involving deep inner
+    // joins.
+    def firstLeafPartitioning(partitioning: Partitioning): Partitioning = {
+      partitioning match {
+        case p: PartitioningCollection => firstLeafPartitioning(p.partitionings.head)
+        case p => p
+      }
+    }
+
+    val outputPartitioning = firstLeafPartitioning(physicalPlan.outputPartitioning)
+
+    Dataset.ofRows(
+      sparkSession,
+      LogicalRDD(
+        logicalPlan.output,
+        internalRdd,
+        outputPartitioning,
+        physicalPlan.outputOrdering
+      )(sparkSession)).as[T]
+  }
 
   /**
    * Displays the Dataset in a tabular form. Strings more than 20 characters will be truncated,
