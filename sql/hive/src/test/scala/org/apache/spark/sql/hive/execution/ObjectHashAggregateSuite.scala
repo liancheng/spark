@@ -168,12 +168,6 @@ class ObjectHashAggregateSuite
     }
   }
 
-  private def percentile_approx(
-      column: Column, percentage: Double, isDistinct: Boolean = false): Column = {
-    val approxPercentile = new ApproximatePercentile(column.expr, Literal(percentage))
-    Column(approxPercentile.toAggregateExpression(isDistinct))
-  }
-
   private def typed_count(column: Column): Column =
     Column(TestingTypedCount(column.expr).toAggregateExpression())
 
@@ -203,7 +197,7 @@ class ObjectHashAggregateSuite
 
   private def makeRandomizedTests(): Unit = {
     // A TypedImperativeAggregate function
-    val typed = percentile_approx($"c0", 0.5)
+    val typed = typed_count($"c0")
 
     // A Hive UDAF without partial aggregation support
     val withoutPartial = function("hive_max", $"c1")
