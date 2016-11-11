@@ -97,6 +97,10 @@ class StringFunctionsSuite extends QueryTest with SharedSQLContext {
   test("non-matching optional group") {
     val df = Seq(Tuple1("aaaac")).toDF("s")
     checkAnswer(
+      df.select(regexp_extract($"s", "(foo)", 1)),
+      Row("")
+    )
+    checkAnswer(
       df.select(regexp_extract($"s", "(a+)(b)?(c)", 2)),
       Row("")
     )
@@ -326,7 +330,8 @@ class StringFunctionsSuite extends QueryTest with SharedSQLContext {
   }
 
   test("string / binary length function") {
-    val df = Seq(("123", Array[Byte](1, 2, 3, 4), 123)).toDF("a", "b", "c")
+    val df = Seq(("123", Array[Byte](1, 2, 3, 4), 123, 2.0f, 3.015))
+      .toDF("a", "b", "c", "d", "e")
     checkAnswer(
       df.select(length($"a"), length($"b")),
       Row(3, 4))
@@ -335,9 +340,10 @@ class StringFunctionsSuite extends QueryTest with SharedSQLContext {
       df.selectExpr("length(a)", "length(b)"),
       Row(3, 4))
 
-    intercept[AnalysisException] {
-      df.selectExpr("length(c)") // int type of the argument is unacceptable
-    }
+    checkAnswer(
+      df.selectExpr("length(c)", "length(d)", "length(e)"),
+      Row(3, 3, 5)
+    )
   }
 
   test("initcap function") {

@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution.datasources
 
+import java.io.IOException
+
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
@@ -27,6 +29,7 @@ import org.apache.spark.rdd.{InputFileNameHolder, RDD}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.vectorized.ColumnarBatch
+import org.apache.spark.util.NextIterator
 import org.apache.spark.util.ThreadUtils
 
 /**
@@ -80,6 +83,8 @@ class FileScanRDD(
   val isAsyncIOEnabled = sparkSession.sessionState.conf.filesAsyncIO
 
   case class NextFile(file: PartitionedFile, iter: Iterator[Object])
+
+  private val ignoreCorruptFiles = sparkSession.sessionState.conf.ignoreCorruptFiles
 
   override def compute(split: RDDPartition, context: TaskContext): Iterator[InternalRow] = {
     val iterator = new Iterator[Object] with AutoCloseable {
@@ -156,7 +161,30 @@ class FileScanRDD(
             InputFileNameHolder.setInputFileName(currentFile.filePath)
 
             try {
-              currentIterator = readFunction(currentFile)
+              if (ignoreCorruptFiles) {
+                currentIterator = new NextIterator[Object] {
+                  private val internalIter = readFunction(currentFile)
+
+                  override def getNext(): AnyRef = {
+                    try {
+                      if (internalIter.hasNext) {
+                        internalIter.next()
+                      } else {
+                        finished = true
+                        null
+                      }
+                    } catch {
+                      case e: IOException =>
+                        finished = true
+                        null
+                    }
+                  }
+
+                  override def close(): Unit = {}
+                }
+              } else {
+                currentIterator = readFunction(currentFile)
+              }
             } catch {
               case e: java.io.FileNotFoundException =>
                 throw new java.io.FileNotFoundException(
