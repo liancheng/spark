@@ -166,42 +166,7 @@ class FileScanRDD(
             currentFile = files.next()
             logInfo(s"Reading File $currentFile")
             InputFileNameHolder.setInputFileName(currentFile.filePath)
-
-            try {
-              if (ignoreCorruptFiles) {
-                currentIterator = new NextIterator[Object] {
-                  private val internalIter = readFunction(currentFile)
-
-                  override def getNext(): AnyRef = {
-                    try {
-                      if (internalIter.hasNext) {
-                        internalIter.next()
-                      } else {
-                        finished = true
-                        null
-                      }
-                    } catch {
-                      case e: IOException =>
-                        finished = true
-                        null
-                    }
-                  }
-
-                  override def close(): Unit = {}
-                }
-              } else {
-                currentIterator = readFunction(currentFile)
-              }
-            } catch {
-              case e: java.io.FileNotFoundException =>
-                throw new java.io.FileNotFoundException(
-                  e.getMessage + "\n" +
-                    "It is possible the underlying files have been updated. " +
-                    "You can explicitly invalidate the cache in Spark by " +
-                    "running 'REFRESH TABLE tableName' command in SQL or " +
-                    "by recreating the Dataset/DataFrame involved."
-                )
-            }
+            currentIterator = createNextIterator(currentFile)
 
             hasNext
           } else {
@@ -218,23 +183,15 @@ class FileScanRDD(
         InputFileNameHolder.unsetInputFileName()
       }
 
-      def prepareNextFile(): Future[NextFile] = {
+      private def prepareNextFile(): Future[NextFile] = {
+        val taskContext = TaskContext.get()
         if (files.hasNext) {
           Future {
+            // We need to make sure that reader registers its completion hooks with the
+            // correct TaskContext.
+            TaskContext.setTaskContext(taskContext)
             val nextFile = files.next()
-            val nextFileIter =
-              try {
-                readFunction(nextFile)
-              } catch {
-                case e: java.io.FileNotFoundException =>
-                  throw new java.io.FileNotFoundException(
-                    e.getMessage + "\n" +
-                      "It is possible the underlying files have been updated. " +
-                      "You can explicitly invalidate the cache in Spark by " +
-                      "running 'REFRESH TABLE tableName' command in SQL or " +
-                      "by recreating the Dataset/DataFrame involved."
-                  )
-              }
+            val nextFileIter = createNextIterator(nextFile)
 
             // Read something from the file to trigger some initial IO.
             nextFileIter.hasNext
@@ -242,6 +199,45 @@ class FileScanRDD(
           }(FileScanRDD.ioExecutionContext)
         } else {
           null
+        }
+      }
+
+      private def createNextIterator(file: PartitionedFile): Iterator[Object] = {
+        try {
+          if (ignoreCorruptFiles) {
+            new NextIterator[Object] {
+              private val internalIter = readFunction(file)
+
+              override def getNext(): AnyRef = {
+                try {
+                  if (internalIter.hasNext) {
+                    internalIter.next()
+                  } else {
+                    finished = true
+                    null
+                  }
+                } catch {
+                  case e: IOException =>
+                    // Should we try to kill async here?
+                    finished = true
+                    null
+                }
+              }
+
+              override def close(): Unit = {}
+            }
+          } else {
+            readFunction(file)
+          }
+        } catch {
+          case e: java.io.FileNotFoundException =>
+            throw new java.io.FileNotFoundException(
+              e.getMessage + "\n" +
+                "It is possible the underlying files have been updated. " +
+                "You can explicitly invalidate the cache in Spark by " +
+                "running 'REFRESH TABLE tableName' command in SQL or " +
+                "by recreating the Dataset/DataFrame involved."
+            )
         }
       }
     }
