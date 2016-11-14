@@ -34,8 +34,7 @@ import org.apache.spark.sql.types.DataType
 abstract class AbstractSqlParser extends ParserInterface with Logging {
 
   /** Creates/Resolves DataType for a given SQL string. */
-  def parseDataType(sqlText: String): DataType = parse(sqlText) { parser =>
-    // TODO add this to the parser interface.
+  override def parseDataType(sqlText: String): DataType = parse(sqlText) { parser =>
     astBuilder.visitSingleDataType(parser.singleDataType())
   }
 

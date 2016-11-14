@@ -117,28 +117,40 @@ private[sql] class SessionState(sparkSession: SparkSession) {
         PreprocessTableInsertion(conf) ::
         new FindDataSourceTable(sparkSession) ::
         DataSourceAnalysis(conf) ::
-        (if (conf.runSQLonFile) new ResolveDataSource(sparkSession) :: Nil else Nil)
+        (if (conf.runSQLonFile) new ResolveDataSource(sparkSession) :: Nil else Nil) ++
+        sparkSession.extensions.buildAnalyzerRules(sparkSession)
 
       override val extendedCheckRules =
-        Seq(PreWriteCheck(conf, catalog), HiveOnlyCheck)
+        Seq(PreWriteCheck(conf, catalog), HiveOnlyCheck) ++
+        sparkSession.extensions.buildCheckAnalysisRules(sparkSession)
     }
   }
 
   /**
    * Logical query plan optimizer.
    */
-  lazy val optimizer: Optimizer = new SparkOptimizer(catalog, conf, experimentalMethods)
+  lazy val optimizer: Optimizer = new SparkOptimizer(
+    catalog,
+    conf,
+    experimentalMethods,
+    sparkSession.extensions.buildOptimizerRules(sparkSession))
 
   /**
    * Parser that extracts expressions, plans, table identifiers etc. from SQL texts.
    */
-  lazy val sqlParser: ParserInterface = new SparkSqlParser(conf)
+  lazy val sqlParser: ParserInterface = {
+    val initial = new SparkSqlParser(conf)
+    sparkSession.extensions.buildParser(sparkSession, initial)
+  }
 
   /**
    * Planner that converts optimized logical plans to physical plans.
    */
-  def planner: SparkPlanner =
-    new SparkPlanner(sparkSession.sparkContext, conf, experimentalMethods.extraStrategies)
+  def planner: SparkPlanner = new SparkPlanner(
+    sparkSession.sparkContext,
+    conf,
+    experimentalMethods.extraStrategies ++
+    sparkSession.extensions.buildPlannerStrategies(sparkSession))
 
   /**
    * An interface to register custom [[org.apache.spark.sql.util.QueryExecutionListener]]s
@@ -152,9 +164,6 @@ private[sql] class SessionState(sparkSession: SparkSession) {
   lazy val streamingQueryManager: StreamingQueryManager = {
     new StreamingQueryManager(sparkSession)
   }
-
-  private val jarClassLoader: NonClosableMutableURLClassLoader =
-    sparkSession.sharedState.jarClassLoader
 
   // Automatically extract all entries and put it in our SQLConf
   // We need to call it after all of vals have been initialized.
@@ -183,6 +192,7 @@ private[sql] class SessionState(sparkSession: SparkSession) {
       // `path` is a URL with a scheme
       uri.toURL
     }
+    val jarClassLoader = sparkSession.sharedState.jarClassLoader
     jarClassLoader.addURL(jarURL)
     Thread.currentThread().setContextClassLoader(jarClassLoader)
   }

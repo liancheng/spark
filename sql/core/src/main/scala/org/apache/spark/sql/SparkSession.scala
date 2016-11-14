@@ -71,11 +71,12 @@ import org.apache.spark.util.Utils
 @InterfaceStability.Stable
 class SparkSession private(
     @transient val sparkContext: SparkContext,
-    @transient private val existingSharedState: Option[SharedState])
+    @transient private val existingSharedState: Option[SharedState],
+    @transient private[sql] val extensions: SparkSessionExtensions)
   extends Serializable with Logging { self =>
 
   private[sql] def this(sc: SparkContext) {
-    this(sc, None)
+    this(sc, None, new SparkSessionExtensions)
   }
 
   sparkContext.assertNotStopped()
@@ -96,8 +97,8 @@ class SparkSession private(
    * and a catalog that interacts with external systems.
    */
   @transient
-  private[sql] lazy val sharedState: SharedState = {
-    existingSharedState.getOrElse(new SharedState(sparkContext))
+  private[sql] val sharedState: SharedState = {
+    existingSharedState.getOrElse(new SharedState(self))
   }
 
   /**
@@ -105,7 +106,7 @@ class SparkSession private(
    * functions, and everything else that accepts a [[org.apache.spark.sql.internal.SQLConf]].
    */
   @transient
-  private[sql] lazy val sessionState: SessionState = {
+  private[sql] val sessionState: SessionState = {
     SparkSession.reflect[SessionState, SparkSession](
       SparkSession.sessionStateClassName(sparkContext.conf),
       self)
@@ -208,7 +209,7 @@ class SparkSession private(
    * @since 2.0.0
    */
   def newSession(): SparkSession = {
-    new SparkSession(sparkContext, Some(sharedState))
+    new SparkSession(sparkContext, Some(sharedState), extensions)
   }
 
 
@@ -700,6 +701,8 @@ object SparkSession {
 
     private[this] val options = new scala.collection.mutable.HashMap[String, String]
 
+    private[this] val extensions: SparkSessionExtensions = new SparkSessionExtensions
+
     private[this] var userSuppliedContext: Option[SparkContext] = None
 
     private[spark] def sparkContext(sparkContext: SparkContext): Builder = synchronized {
@@ -794,6 +797,17 @@ object SparkSession {
     }
 
     /**
+     * Inject extensions into the [[SparkSession]]. This allows a user to add Analyzer rules,
+     * Optimizer rules, Planning Strategies, a customized parser and a listener for Catalog events.
+     *
+     * @since 2.1.0
+     */
+    def withExtensions(f: SparkSessionExtensions => Unit): Builder = {
+      f(extensions)
+      this
+    }
+
+    /**
      * Gets an existing [[SparkSession]] or, if there is no existing one, creates a new
      * one based on the options set in this builder.
      *
@@ -849,7 +863,27 @@ object SparkSession {
           }
           sc
         }
-        session = new SparkSession(sparkContext)
+
+        // Initialize extensions if the user has defined a configurator class.
+        val extensionConfOption = sparkContext.conf.getOption("spark.sql.extensions")
+        if (extensionConfOption.isDefined) {
+          val extensionConfClassName = extensionConfOption.get
+          try {
+            val extensionConfClass = Utils.classForName(extensionConfClassName)
+            val extensionConf = extensionConfClass.newInstance()
+              .asInstanceOf[SparkSessionExtensions => Unit]
+            extensionConf(extensions)
+          } catch {
+            // Ignore the error if we cannot find the class or when the class has the wrong type.
+            case e @ (_: ClassCastException |
+                      _: ClassNotFoundException |
+                      _: NoClassDefFoundError) =>
+              logWarning(s"Cannot use $extensionConfClassName to configure session extensions.", e)
+          }
+        }
+
+        // Create the new session.
+        session = new SparkSession(sparkContext, None, extensions)
         options.foreach { case (k, v) => session.sessionState.conf.setConfString(k, v) }
         defaultSession.set(session)
 

@@ -64,9 +64,12 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
         AnalyzeCreateTable(sparkSession) ::
         PreprocessTableInsertion(conf) ::
         DataSourceAnalysis(conf) ::
-        (if (conf.runSQLonFile) new ResolveDataSource(sparkSession) :: Nil else Nil)
+        (if (conf.runSQLonFile) new ResolveDataSource(sparkSession) :: Nil else Nil) ++
+        sparkSession.extensions.buildAnalyzerRules(sparkSession)
 
-      override val extendedCheckRules = Seq(PreWriteCheck(conf, catalog))
+      override val extendedCheckRules =
+        PreWriteCheck(conf, catalog) +:
+        sparkSession.extensions.buildCheckAnalysisRules(sparkSession)
     }
   }
 
@@ -74,12 +77,14 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
    * Planner that takes into account Hive-specific strategies.
    */
   override def planner: SparkPlanner = {
-    new SparkPlanner(sparkSession.sparkContext, conf, experimentalMethods.extraStrategies)
+    val extraStrategies = experimentalMethods.extraStrategies ++
+      sparkSession.extensions.buildPlannerStrategies(sparkSession)
+    new SparkPlanner(sparkSession.sparkContext, conf, extraStrategies)
       with HiveStrategies {
       override val sparkSession: SparkSession = self.sparkSession
 
       override def strategies: Seq[Strategy] = {
-        experimentalMethods.extraStrategies ++ Seq(
+        extraStrategies ++ Seq(
           FileSourceStrategy,
           DataSourceStrategy,
           DDLStrategy,

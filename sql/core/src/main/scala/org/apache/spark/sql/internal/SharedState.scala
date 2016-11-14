@@ -36,7 +36,8 @@ import org.apache.spark.util.{MutableURLClassLoader, Utils}
 /**
  * A class that holds all state shared across sessions in a given [[SQLContext]].
  */
-private[sql] class SharedState(val sparkContext: SparkContext) extends Logging {
+private[sql] class SharedState(sparkSession: SparkSession) extends Logging {
+  protected val sparkContext = sparkSession.sparkContext
 
   // Load hive-site.xml into hadoopConf and determine the warehouse path we want to use, based on
   // the config from both hive and Spark SQL. Finally set the warehouse config value to sparkConf.
@@ -82,16 +83,25 @@ private[sql] class SharedState(val sparkContext: SparkContext) extends Logging {
   /**
    * A catalog that interacts with external systems.
    */
-  val externalCatalog: ExternalCatalog =
-    SharedState.reflect[ExternalCatalog, SparkConf, Configuration](
+  lazy val externalCatalog: ExternalCatalog = {
+    val catalog = SharedState.reflect[ExternalCatalog, SparkConf, Configuration](
       SharedState.externalCatalogClassName(sparkContext.conf),
       sparkContext.conf,
       sparkContext.hadoopConfiguration)
 
+    // Wrap the external catalog with an hook calling external catalog when a
+    // catalog hooks object is defined.
+    sparkSession.extensions.buildCatalogHooks(sparkSession) match {
+      case Some(catalogListener) => new HookCallingExternalCatalog(catalog, catalogListener)
+      case None => catalog
+    }
+  }
+
+
   /**
    * A manager for global temporary views.
    */
-  val globalTempViewManager = {
+  lazy val globalTempViewManager = {
     // System preserved database should not exists in metastore. However it's hard to guarantee it
     // for every session, because case-sensitivity differs. Here we always lowercase it to make our
     // life easier.

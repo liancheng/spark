@@ -20,6 +20,8 @@ package org.apache.spark.sql.execution
 import org.apache.spark.sql.ExperimentalMethods
 import org.apache.spark.sql.catalyst.catalog.SessionCatalog
 import org.apache.spark.sql.catalyst.optimizer.Optimizer
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.closure.TranslateClosureOptimizerRule
 import org.apache.spark.sql.execution.datasources.PruneFileSourcePartitions
 import org.apache.spark.sql.execution.python.ExtractPythonUDFFromAggregate
@@ -28,7 +30,8 @@ import org.apache.spark.sql.internal.SQLConf
 class SparkOptimizer(
     catalog: SessionCatalog,
     conf: SQLConf,
-    experimentalMethods: ExperimentalMethods)
+    experimentalMethods: ExperimentalMethods,
+    extraOptimizationRules: Seq[Rule[LogicalPlan]])
   extends Optimizer(catalog, conf) {
 
   override def batches: Seq[Batch] = {
@@ -43,6 +46,7 @@ class SparkOptimizer(
       Batch("Optimize Metadata Only Query", Once, OptimizeMetadataOnlyQuery(catalog, conf)) :+
       Batch("Extract Python UDF from Aggregate", Once, ExtractPythonUDFFromAggregate) :+
       Batch("Prune File Source Table Partitions", Once, PruneFileSourcePartitions) :+
-      Batch("User Provided Optimizers", fixedPoint, experimentalMethods.extraOptimizations: _*)
+      Batch("User Provided Optimizers", fixedPoint,
+        experimentalMethods.extraOptimizations ++ extraOptimizationRules: _*)
   }
 }
