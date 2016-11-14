@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -346,6 +347,25 @@ public class SessionManager extends CompositeService {
 
   public static void clearProxyUserName() {
     threadLocalProxyUserName.remove();
+  }
+
+  private static ThreadLocal<Map<String, String>> threadLocalCustomProperties = new ThreadLocal<Map<String, String>>() {
+    @Override
+    protected synchronized Map<String, String> initialValue() {
+      return new HashMap<String, String>();
+    }
+  };
+
+  public static void setCustomProperties(Map<String, String> customProperties) {
+    threadLocalCustomProperties.set(customProperties);
+  }
+
+  public static Map<String, String> getCustomProperties() {
+    return threadLocalCustomProperties.get();
+  }
+
+  public static void clearCustomProperties() {
+    threadLocalCustomProperties.remove();
   }
 
   public Future<?> submitBackgroundOperation(Runnable r) {

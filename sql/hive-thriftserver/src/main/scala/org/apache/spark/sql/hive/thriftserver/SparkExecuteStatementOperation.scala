@@ -31,6 +31,7 @@ import org.apache.hadoop.hive.shims.Utils
 import org.apache.hive.service.cli._
 import org.apache.hive.service.cli.operation.ExecuteStatementOperation
 import org.apache.hive.service.cli.session.HiveSession
+import org.apache.hive.service.cli.session.SessionManager
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row => SparkRow, SQLContext}
@@ -62,6 +63,10 @@ private[hive] class SparkExecuteStatementOperation(
       logInfo(s"Result Schema: ${result.schema}")
       SparkExecuteStatementOperation.getTableSchema(result.schema)
     }
+  }
+
+  private val customStatementProperties: Map[String, String] = {
+    SessionManager.getCustomProperties.asScala.toMap
   }
 
   def close(): Unit = {
@@ -217,6 +222,9 @@ private[hive] class SparkExecuteStatementOperation(
       sqlContext.sparkContext.setLocalProperty("spark.scheduler.pool", pool)
     }
     try {
+      customStatementProperties.foreach { kvPair =>
+        sqlContext.sparkContext.setLocalProperty(kvPair._1, kvPair._2)
+      }
       result = sqlContext.sql(statement)
       logDebug(result.queryExecution.toString())
       result.queryExecution.logical match {
@@ -256,6 +264,10 @@ private[hive] class SparkExecuteStatementOperation(
         HiveThriftServer2.listener.onStatementError(
           statementId, e.getMessage, SparkUtils.exceptionString(e))
         throw new HiveSQLException(e.toString)
+    } finally {
+      customStatementProperties.keys.foreach { key =>
+        sqlContext.sparkContext.setLocalProperty(key, null)
+      }
     }
     setState(OperationState.FINISHED)
     HiveThriftServer2.listener.onStatementFinish(statementId)
