@@ -91,18 +91,17 @@ private[sql] class SharedState(sparkSession: SparkSession) extends Logging {
 
     // Wrap the external catalog with an hook calling external catalog when a
     // catalog hooks object is defined.
-    sparkSession.extensions.buildCatalogHooks(sparkSession) match {
+    val hookedCatalog = sparkSession.extensions.buildCatalogHooks(sparkSession) match {
       case Some(catalogListener) => new HookCallingExternalCatalog(catalog, catalogListener)
       case None => catalog
     }
-  }
 
-  // Create the default database if it doesn't exist.
-  {
+    // Create the default database if it doesn't exist.
     val defaultDbDefinition = CatalogDatabase(
       SessionCatalog.DEFAULT_DATABASE, "default database", warehousePath, Map())
     // Initialize default database if it doesn't already exist
-    externalCatalog.createDatabase(defaultDbDefinition, ignoreIfExists = true)
+    hookedCatalog.createDatabase(defaultDbDefinition, ignoreIfExists = true)
+    hookedCatalog
   }
 
   /**
