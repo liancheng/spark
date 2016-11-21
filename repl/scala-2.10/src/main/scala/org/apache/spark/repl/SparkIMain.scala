@@ -85,6 +85,26 @@ import org.apache.spark.annotation.DeveloperApi
    *
    *  @author Moez A. Abdel-Gawad
    *  @author Lex Spoon
+   *
+   * Comments for Databricks changes:
+   *
+   * `SparkIMain.TranslatingClassLoader` is not thread-safe because it accesses non-thread-safe
+   * fields of `SparkIMain`. (See https://databricks.atlassian.net/browse/SC-5006 and
+   * https://issues.scala-lang.org/browse/SI-10045)
+   * So we need to add necessary locks to make sure no class is being loaded when compiling codes.
+   *
+   * We use `SparkIMain.classLoader` (an instance of `SparkIMain.TranslatingClassLoader`)
+   * to lock is because methods in `TranslatingClassLoader` has already been protected by `TranslatingClassLoader`.
+   * If we use other locks, it's easy to cause dead-lock. Therefore, we just use `SparkIMain.classLoader`.
+   *
+   * The following 3 places will be called by us and they need to be protected:
+   *
+   *  - Compile sources. `requestFromLine` is override to add the lock.
+   *  - Code completation. See `SparkJLineCompletion.JLineTabCompletion`.
+   *  - Compile a package cell. `compileSources` is override to add the lock.
+   *
+   * The fix for Scala 2.11 is in databricks/universe:
+   * https://github.com/databricks/universe/commit/034d8a7c16e81d74fe655c7ed7cbd2aad6421b15
    */
   @DeveloperApi
   class SparkIMain(
@@ -654,8 +674,9 @@ import org.apache.spark.annotation.DeveloperApi
      * @return True if successful, otherwise false
      */
     @DeveloperApi
-    def compileSources(sources: SourceFile*): Boolean =
+    def compileSources(sources: SourceFile*): Boolean = classLoader.synchronized {
       compileSourcesKeepingRun(sources: _*)._1
+    }
 
     /**
      * Compiles a string of code.
@@ -702,7 +723,7 @@ import org.apache.spark.annotation.DeveloperApi
   }
 
 
-  private def requestFromLine(line: String, synthetic: Boolean): Either[IR.Result, Request] = {
+  private def requestFromLine(line: String, synthetic: Boolean): Either[IR.Result, Request] = classLoader.synchronized {
     val content = indentCode(line)
     val trees = parse(content) match {
       case None         => return Left(IR.Incomplete)
@@ -849,7 +870,10 @@ import org.apache.spark.annotation.DeveloperApi
       case Right(req)   =>
         // null indicates a disallowed statement type; otherwise compile and
         // fail if false (implying e.g. a type error)
-        if (req == null || !req.compile) IR.Error
+        val hasError = classLoader.synchronized {
+          req == null || !req.compile
+        }
+        if (hasError) IR.Error
         else loadAndRunReq(req)
     }
   }

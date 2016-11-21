@@ -343,7 +343,7 @@ class SparkJLineCompletion(val intp: SparkIMain) extends Completion with Complet
     }
 
     // This is jline's entry point for completion.
-    override def complete(buf: String, cursor: Int): Candidates = {
+    override def complete(buf: String, cursor: Int): Candidates = intp.classLoader.synchronized {
       verbosity = if (isConsecutiveTabs(buf, cursor)) verbosity + 1 else 0
       logDebug("\ncomplete(%s, %d) last = (%s, %d), verbosity: %s".format(buf, cursor, lastBuf, lastCursor, verbosity))
 
