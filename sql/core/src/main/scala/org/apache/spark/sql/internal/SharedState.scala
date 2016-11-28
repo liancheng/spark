@@ -99,8 +99,12 @@ private[sql] class SharedState(sparkSession: SparkSession) extends Logging {
     // Create the default database if it doesn't exist.
     val defaultDbDefinition = CatalogDatabase(
       SessionCatalog.DEFAULT_DATABASE, "default database", warehousePath, Map())
-    // Initialize default database if it doesn't already exist
-    hookedCatalog.createDatabase(defaultDbDefinition, ignoreIfExists = true)
+    // Initialize default database if it doesn't exist
+    if (!hookedCatalog.databaseExists(SessionCatalog.DEFAULT_DATABASE)) {
+      // There may be another Spark application creating default database at the same time, here we
+      // set `ignoreIfExists = true` to avoid `DatabaseAlreadyExists` exception.
+      hookedCatalog.createDatabase(defaultDbDefinition, ignoreIfExists = true)
+    }
     hookedCatalog
   }
 
