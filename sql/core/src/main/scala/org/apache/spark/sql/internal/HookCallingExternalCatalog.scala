@@ -261,6 +261,13 @@ class HookCallingExternalCatalog(val delegate: ExternalCatalog, val hooks: Catal
     delegate.listPartitionsByFilter(db, table, predicates)
   }
 
+  override def listPartitionNames(
+      db: String,
+      table: String,
+      partialSpec: Option[TablePartitionSpec]): Seq[String] = {
+    delegate.listPartitionNames(db, table, partialSpec)
+  }
+
   override def createFunction(db: String, funcDefinition: CatalogFunction): Unit = {
     val funcName = funcDefinition.identifier.funcName
     hooks.beforeCreateFunction(db, funcName)
