@@ -23,7 +23,6 @@ import java.io.UnsupportedEncodingException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -86,7 +85,7 @@ public class ThriftHttpServlet extends TServlet {
   private int cookieMaxAge;
   private boolean isCookieSecure;
   private boolean isHttpOnlyCookie;
-  private Set<String> customHeaderKeys;
+  private Map<String, String> customHeadersToProperties;
 
   public ThriftHttpServlet(TProcessor processor, TProtocolFactory protocolFactory,
       String authType, UserGroupInformation serviceUGI, UserGroupInformation httpUGI) {
@@ -110,8 +109,14 @@ public class ThriftHttpServlet extends TServlet {
         ConfVars.HIVE_SERVER2_THRIFT_HTTP_COOKIE_IS_SECURE);
       this.isHttpOnlyCookie = hiveConf.getBoolVar(
         ConfVars.HIVE_SERVER2_THRIFT_HTTP_COOKIE_IS_HTTPONLY);
-      this.customHeaderKeys = new HashSet<String>(
-        hiveConf.getStringCollection("spark.thriftserver.customHeaders"));
+      this.customHeadersToProperties = new HashMap<String, String>();
+      for (String headerToProperty :
+          hiveConf.getStringCollection("spark.thriftserver.customHeadersToProperties")) {
+        String[] headerProp = headerToProperty.split(":", 2);
+        String header = headerProp[0];
+        String property = (headerProp.length > 1) ? headerProp[1] : header;
+        this.customHeadersToProperties.put(header, property);
+      }
     }
   }
 
@@ -174,7 +179,7 @@ public class ThriftHttpServlet extends TServlet {
         LOG.info("Cookie added for clientUserName " + clientUserName);
       }
 
-      SessionManager.setCustomProperties(getCustomHeaders(request, customHeaderKeys));
+      SessionManager.setCustomProperties(getCustomProperties(request, customHeadersToProperties));
 
       super.doPost(request, response);
     }
@@ -258,16 +263,16 @@ public class ThriftHttpServlet extends TServlet {
     return cookieStr;
   }
 
-  private static Map<String, String> getCustomHeaders(HttpServletRequest request,
-      Set<String> headerKeys) {
-    HashMap<String, String> headers = new HashMap<String, String>();
-    for (String headerKey: headerKeys) {
-      String attribute = request.getHeader(headerKey);
+  private static Map<String, String> getCustomProperties(HttpServletRequest request,
+      Map<String, String> headerToProps) {
+    HashMap<String, String> properties = new HashMap<String, String>();
+    for (Map.Entry<String, String> headerToProp: headerToProps.entrySet()) {
+      String attribute = request.getHeader(headerToProp.getKey());
       if (attribute != null) {
-        headers.put(headerKey, attribute);
+        properties.put(headerToProp.getValue(), attribute);
       }
     }
-    return headers;
+    return properties;
   }
 
   /**

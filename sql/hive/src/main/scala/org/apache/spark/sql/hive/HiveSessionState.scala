@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.analysis.Analyzer
 import org.apache.spark.sql.execution.SparkPlanner
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.hive.client.HiveClient
-import org.apache.spark.sql.internal.SessionState
+import org.apache.spark.sql.internal.{HookCallingExternalCatalog, SessionState}
 
 
 /**
@@ -36,15 +36,20 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
   /**
    * A Hive client used for interacting with the metastore.
    */
-  lazy val metadataHive: HiveClient =
-    sparkSession.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client.newSession()
+  lazy val metadataHive: HiveClient = {
+    val catalog = sparkSession.sharedState.externalCatalog match {
+      case catalog: HiveExternalCatalog => catalog
+      case HookCallingExternalCatalog(catalog: HiveExternalCatalog) => catalog
+    }
+    catalog.client.newSession()
+  }
 
   /**
    * Internal catalog for managing table and database states.
    */
   override lazy val catalog = {
     new HiveSessionCatalog(
-      sparkSession.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog],
+      sparkSession.sharedState.externalCatalog,
       sparkSession.sharedState.globalTempViewManager,
       sparkSession,
       functionResourceLoader,

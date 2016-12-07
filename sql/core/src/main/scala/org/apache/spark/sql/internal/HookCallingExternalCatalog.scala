@@ -308,3 +308,9 @@ class HookCallingExternalCatalog(val delegate: ExternalCatalog, val hooks: Catal
     result
   }
 }
+
+object HookCallingExternalCatalog {
+  def unapply(catalog: HookCallingExternalCatalog): Option[ExternalCatalog] = {
+    Some(catalog.delegate)
+  }
+}
