@@ -155,6 +155,8 @@ private[deploy] class ExecutorRunner(
       builder.environment.put("SPARK_LAUNCH_WITH_SCALA", "0")
 
       // Add webUI log urls
+      // Note: It's very important that the slash after logPage is kept here.
+      // Omitting it will break the load more JS on the log viewer page.
       val baseUrl =
         if (conf.getBoolean("spark.ui.reverseProxy", false)) {
           s"/proxy/$workerId/logPage/?appId=$appId&executorId=$execId&logType="

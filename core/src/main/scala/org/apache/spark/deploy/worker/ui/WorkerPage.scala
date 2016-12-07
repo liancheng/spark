@@ -117,9 +117,11 @@ private[ui] class WorkerPage(parent: WorkerWebUI) extends WebUIPage("") {
         </ul>
       </td>
       <td>
-     <a href={"logPage?appId=%s&executorId=%s&logType=stdout"
+     <!-- Note: It's very important that the slash after logPage is kept here.
+          Omitting it will break the load more JS on the log viewer page. -->
+     <a href={"logPage/?appId=%s&executorId=%s&logType=stdout"
         .format(executor.appId, executor.execId)}>stdout</a>
-     <a href={"logPage?appId=%s&executorId=%s&logType=stderr"
+     <a href={"logPage/?appId=%s&executorId=%s&logType=stderr"
         .format(executor.appId, executor.execId)}>stderr</a>
       </td>
     </tr>
@@ -138,8 +140,10 @@ private[ui] class WorkerPage(parent: WorkerWebUI) extends WebUIPage("") {
         {Utils.megabytesToString(driver.driverDesc.mem)}
       </td>
       <td>
-        <a href={s"logPage?driverId=${driver.driverId}&logType=stdout"}>stdout</a>
-        <a href={s"logPage?driverId=${driver.driverId}&logType=stderr"}>stderr</a>
+        <!-- Note: It's very important that the slash after logPage is kept here.
+             Omitting it will break the load more JS on the log viewer page. -->
+        <a href={s"logPage/?driverId=${driver.driverId}&logType=stdout"}>stdout</a>
+        <a href={s"logPage/?driverId=${driver.driverId}&logType=stderr"}>stderr</a>
       </td>
       <td>
         {driver.finalException.getOrElse("")}

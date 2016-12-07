@@ -124,9 +124,11 @@ private[ui] class ApplicationPage(parent: MasterWebUI) extends WebUIPage("app") 
       <td>{executor.memory}</td>
       <td>{executor.state}</td>
       <td>
-        <a href={"%s/logPage?appId=%s&executorId=%s&logType=stdout"
+        <!-- Note: It's very important that the slash after logPage is kept here.
+             Omitting it will break the load more JS on the log viewer page. -->
+        <a href={"%s/logPage/?appId=%s&executorId=%s&logType=stdout"
           .format(workerUrlRef, executor.application.id, executor.id)}>stdout</a>
-        <a href={"%s/logPage?appId=%s&executorId=%s&logType=stderr"
+        <a href={"%s/logPage/?appId=%s&executorId=%s&logType=stderr"
           .format(workerUrlRef, executor.application.id, executor.id)}>stderr</a>
       </td>
     </tr>
