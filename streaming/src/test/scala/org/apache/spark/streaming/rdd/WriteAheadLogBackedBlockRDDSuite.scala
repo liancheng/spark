@@ -58,7 +58,6 @@ class WriteAheadLogBackedBlockRDDSuite
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    SparkContext.getActiveContext().foreach(_.stop())
     sparkContext = new SparkContext(conf)
     blockManager = sparkContext.env.blockManager
     serializerManager = sparkContext.env.serializerManager

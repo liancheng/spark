@@ -20,7 +20,6 @@ package org.apache.spark.streaming
 import java.io.{IOException, ObjectInputStream}
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import scala.collection.mutable
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
 import scala.reflect.ClassTag
@@ -208,83 +207,18 @@ class BatchCounter(ssc: StreamingContext) {
   }
 }
 
-trait ReuseableSparkContext extends SparkFunSuite with BeforeAndAfter with Logging {
+/**
+ * This is the base trait for Spark Streaming testsuites. This provides basic functionality
+ * to run user-defined set of input on user-defined stream operations, and verify the output.
+ */
+trait TestSuiteBase extends SparkFunSuite with BeforeAndAfter with Logging {
+
   // Name of the framework for Spark context
   def framework: String = this.getClass.getSimpleName
 
   // Master for Spark context
   def master: String = "local[2]"
 
-  // Configurations to add to a new or existing spark context.
-  def extraSparkConf: Map[String, String] = {
-    Map("spark.streaming.stopSparkContextByDefault" -> (!reuseContext).toString)
-  }
-
-  // Flag to indicate that the test should try to reuse a previously created context.
-  val reuseContext: Boolean = true
-
-  // Spark context used during the tests. Note that this can be (re)used by several tests.
-  private var _sc: SparkContext = _
-
-  // Store the configuration of the SparkContext before testing.
-  private val confBeforeTesting: mutable.Buffer[(String, String)] = mutable.Buffer.empty
-
-  // Get the existing or create a new spark context.
-  def sc: SparkContext = {
-    // Drop the existing context if we do not reuse.
-    if (!reuseContext) {
-      stopActiveContext()
-    }
-
-    if (_sc == null || _sc.isStopped) {
-      val conf = new SparkConf().setMaster(master).setAppName(framework)
-      _sc = SparkContext.getOrCreate(conf)
-
-      // Configure the context and make sure we store the old keys.
-      extraSparkConf.foreach { case (k, v) =>
-        if (_sc.conf.contains(k) && reuseContext) {
-          confBeforeTesting += k -> _sc.conf.get(k)
-        }
-        _sc.conf.set(k, v)
-      }
-    }
-    _sc
-  }
-
-
-  override protected def beforeAll(): Unit = {
-    super.beforeAll()
-    // Drop the existing context if we do not reuse.
-    if (!reuseContext) {
-      stopActiveContext()
-    }
-  }
-
-  protected override def afterAll(): Unit = {
-    if (_sc != null) {
-      if (reuseContext) {
-        extraSparkConf.foreach(kv => _sc.conf.remove(kv._1))
-        _sc.conf.setAll(confBeforeTesting)
-      }
-      _sc = null
-    }
-    if (!reuseContext) {
-      stopActiveContext()
-    }
-    super.afterAll()
-  }
-
-  protected def stopActiveContext(): Unit = {
-    SparkContext.getActiveContext().foreach(_.stop())
-    _sc = null
-  }
-}
-
-/**
- * This is the base trait for Spark Streaming testsuites. This provides basic functionality
- * to run user-defined set of input on user-defined stream operations, and verify the output.
- */
-trait TestSuiteBase extends ReuseableSparkContext with BeforeAndAfter {
   // Batch duration
   def batchDuration: Duration = Seconds(1)
 
@@ -301,25 +235,42 @@ trait TestSuiteBase extends ReuseableSparkContext with BeforeAndAfter {
   // Maximum time to wait before the test times out
   def maxWaitTimeMillis: Int = 10000
 
-  // Configurations to add to a new or existing spark context.
-  override def extraSparkConf: Map[String, String] = {
-    // Use a manual clock
-    super.extraSparkConf ++ Map("spark.streaming.clock" -> "org.apache.spark.util.ManualClock")
-  }
+  // Whether to use manual clock or not
+  def useManualClock: Boolean = true
 
   // Whether to actually wait in real time before changing manual clock
   def actuallyWait: Boolean = false
 
+  // A SparkConf to use in tests. Can be modified before calling setupStreams to configure things.
+  val conf = new SparkConf()
+    .setMaster(master)
+    .setAppName(framework)
+
   // Timeout for use in ScalaTest `eventually` blocks
   val eventuallyTimeout: PatienceConfiguration.Timeout = timeout(Span(10, ScalaTestSeconds))
 
+  // Make sure that there is no spark context active.
+  override protected def beforeAll(): Unit = {
+    SparkContext.getOrCreate(conf).stop()
+  }
+
   // Default before function for any streaming test suite. Override this
   // if you want to add your stuff to "before" (i.e., don't call before { } )
-  def beforeFunction() { }
+  def beforeFunction() {
+    if (useManualClock) {
+      logInfo("Using manual clock")
+      conf.set("spark.streaming.clock", "org.apache.spark.util.ManualClock")
+    } else {
+      logInfo("Using real clock")
+      conf.set("spark.streaming.clock", "org.apache.spark.util.SystemClock")
+    }
+  }
 
   // Default after function for any streaming test suite. Override this
   // if you want to add your stuff to "after" (i.e., don't call after { } )
-  def afterFunction() { }
+  def afterFunction() {
+    System.clearProperty("spark.streaming.clock")
+  }
 
   before(beforeFunction)
   after(afterFunction)
@@ -333,24 +284,12 @@ trait TestSuiteBase extends ReuseableSparkContext with BeforeAndAfter {
       block(ssc)
     } finally {
       try {
-        ssc.stop()
+        ssc.stop(stopSparkContext = true)
       } catch {
         case e: Exception =>
           logError("Error stopping StreamingContext", e)
       }
     }
-  }
-
-  def withStreamingContext[R](duration: Duration)(block: StreamingContext => R): R = {
-    withStreamingContext(new StreamingContext(sc, duration))(block)
-  }
-
-  /**
-   * Run a block of code with a StreamingContext and automatically stop the context when the
-   * block completes or when an exception is thrown.
-   */
-  def withStreamingContext[R](block: StreamingContext => R): R = {
-    withStreamingContext(new StreamingContext(sc, batchDuration))(block)
   }
 
   /**
@@ -380,7 +319,7 @@ trait TestSuiteBase extends ReuseableSparkContext with BeforeAndAfter {
       numPartitions: Int = numInputPartitions
     ): StreamingContext = {
     // Create StreamingContext
-    val ssc = new StreamingContext(sc, batchDuration)
+    val ssc = new StreamingContext(conf, batchDuration)
     if (checkpointDir != null) {
       ssc.checkpoint(checkpointDir)
     }
@@ -404,7 +343,7 @@ trait TestSuiteBase extends ReuseableSparkContext with BeforeAndAfter {
       operation: (DStream[U], DStream[V]) => DStream[W]
     ): StreamingContext = {
     // Create StreamingContext
-    val ssc = new StreamingContext(sc, batchDuration)
+    val ssc = new StreamingContext(conf, batchDuration)
     if (checkpointDir != null) {
       ssc.checkpoint(checkpointDir)
     }
@@ -491,7 +430,7 @@ trait TestSuiteBase extends ReuseableSparkContext with BeforeAndAfter {
 
       Thread.sleep(100) // Give some time for the forgetting old RDDs to complete
     } finally {
-      ssc.stop()
+      ssc.stop(stopSparkContext = true)
     }
     output.asScala.toSeq
   }

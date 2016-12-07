@@ -35,11 +35,6 @@ class FailureSuite extends SparkFunSuite with BeforeAndAfter with Logging {
   private val numBatches = 30
   private var directory: File = null
 
-  override protected def beforeAll(): Unit = {
-    super.beforeAll()
-    SparkContext.getActiveContext().foreach(_.stop())
-  }
-
   before {
     directory = Utils.createTempDir()
   }
@@ -51,7 +46,7 @@ class FailureSuite extends SparkFunSuite with BeforeAndAfter with Logging {
     StreamingContext.getActive().foreach { _.stop() }
 
     // Stop SparkContext if active
-    SparkContext.getActiveContext().foreach(_.stop())
+    SparkContext.getOrCreate(new SparkConf().setMaster("local").setAppName("bla")).stop()
   }
 
   test("multiple failures with map") {
