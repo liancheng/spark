@@ -219,6 +219,7 @@ class FileScanRDD(
                 } catch {
                   case e: IOException =>
                     // Should we try to kill async here?
+                    logWarning(s"Skipped the rest content in the corrupted file: $file", e)
                     finished = true
                     null
                 }
