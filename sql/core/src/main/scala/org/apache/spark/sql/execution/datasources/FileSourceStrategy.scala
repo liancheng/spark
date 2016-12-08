@@ -67,7 +67,7 @@ object FileSourceStrategy extends Strategy with Logging {
       val normalizedFilters = filters.map { e =>
         e transform {
           case a: AttributeReference =>
-            a.withName(l.output.find(_.semanticEquals(a)).get.name)
+            a.withName(l.output.find(_.semanticEquals(a)).getOrElse(a).name)
         }
       }
 

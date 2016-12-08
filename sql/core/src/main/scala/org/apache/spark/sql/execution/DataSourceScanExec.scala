@@ -156,7 +156,30 @@ case class FileSourceScanExec(
     false
   }
 
-  @transient private lazy val selectedPartitions = relation.location.listFiles(partitionFilters)
+  private def isDynamicPartitionFilter(e: Expression): Boolean =
+    e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+
+  @transient private lazy val selectedPartitions =
+    relation.location.listFiles(partitionFilters.filterNot(isDynamicPartitionFilter))
+
+  // We can only determine the actual partitions at runtime when a dynamic partition filter is
+  // present. This is because such a filter relies on information that is only available at run
+  // time (for instance the keys used in the other side of a join).
+  @transient private lazy val dynamicallySelectedPartitions = {
+    val dynamicPartitionFilters = partitionFilters.filter(isDynamicPartitionFilter)
+    if (dynamicPartitionFilters.nonEmpty) {
+      val predicate = dynamicPartitionFilters.reduce(And)
+      val partitionColumns = relation.partitionSchema
+      val boundPredicate = newPredicate(predicate.transform {
+        case a: AttributeReference =>
+          val index = partitionColumns.indexWhere(a.name == _.name)
+          BoundReference(index, partitionColumns(index).dataType, nullable = true)
+      }, Nil)
+      selectedPartitions.filter(p => boundPredicate.eval(p.values))
+    } else {
+      selectedPartitions
+    }
+  }
 
   override val (outputPartitioning, outputOrdering): (Partitioning, Seq[SortOrder]) = {
     val bucketSpec = if (relation.sparkSession.sessionState.conf.bucketingEnabled) {
@@ -261,9 +284,9 @@ case class FileSourceScanExec(
 
     relation.bucketSpec match {
       case Some(bucketing) if relation.sparkSession.sessionState.conf.bucketingEnabled =>
-        createBucketedReadRDD(bucketing, readFile, selectedPartitions, relation)
+        createBucketedReadRDD(bucketing, readFile, dynamicallySelectedPartitions, relation)
       case _ =>
-        createNonBucketedReadRDD(readFile, selectedPartitions, relation)
+        createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions, relation)
     }
   }
 

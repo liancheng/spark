@@ -2011,6 +2011,30 @@ class SQLQuerySuite extends QueryTest with SQLTestUtils with TestHiveSingleton {
     }
   }
 
+  test("dynamic partition pruning") {
+    withTable("df1", "df2") {
+      spark.range(100)
+        .select($"id", $"id".as("k"))
+        .write
+        .partitionBy("k")
+        .format("parquet")
+        .mode("overwrite")
+        .saveAsTable("df1")
+
+      spark.range(100)
+        .select($"id", $"id".as("k"))
+        .write
+        .partitionBy("k")
+        .format("parquet")
+        .mode("overwrite")
+        .saveAsTable("df2")
+
+      checkAnswer(
+        sql("select df1.id, df2.k from df1 join df2 on df1.k = df2.k and df2.id < 2"),
+        Row(0, 0) :: Row(1, 1) :: Nil)
+    }
+  }
+
   def testCommandAvailable(command: String): Boolean = {
     val attempt = Try(Process(command).run(ProcessLogger(_ => ())).exitValue())
     attempt.isSuccess && attempt.get == 0

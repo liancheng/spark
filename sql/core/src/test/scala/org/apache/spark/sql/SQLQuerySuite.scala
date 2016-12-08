@@ -22,8 +22,9 @@ import java.math.MathContext
 import java.sql.Timestamp
 
 import org.apache.spark.{AccumulatorSuite, SparkException}
+import org.apache.spark.sql.catalyst.expressions.PlanExpression
 import org.apache.spark.sql.catalyst.util.StringUtils
-import org.apache.spark.sql.execution.aggregate
+import org.apache.spark.sql.execution.{aggregate, FileSourceScanExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, CartesianProductExec, SortMergeJoinExec}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
@@ -2083,6 +2084,20 @@ class SQLQuerySuite extends QueryTest with SharedSQLContext {
       val rdd = sparkContext.parallelize(Array(json))
       spark.read.json(rdd).write.mode("overwrite").parquet(dir.toString)
       spark.read.parquet(dir.toString).collect()
+    }
+  }
+
+  test("dynamic partition pruning") {
+    withTempDir { dir =>
+      val df = spark.range(100).selectExpr("id", "id as k")
+      df.write.mode("overwrite").partitionBy("k").parquet(dir.toString)
+      val df2 = spark.read.parquet(dir.toString).join(df.filter("id < 2"), "k")
+      assert(df2.queryExecution.executedPlan.find {
+        case s: FileSourceScanExec =>
+          s.partitionFilters.exists(_.find(_.isInstanceOf[PlanExpression[_]]).isDefined)
+        case o => false
+      }.isDefined, "Parquet scan should have partition predicate")
+      checkAnswer(df2, Row(0, 0, 0) :: Row(1, 1, 1) :: Nil)
     }
   }
 
