@@ -57,7 +57,7 @@ function loadMore() {
 
   $.ajax({
     type: "GET",
-    url: "/log" + baseParams + "&offset=" + offset + "&byteLength=" + moreByteLength,
+    url: "../log" + baseParams + "&offset=" + offset + "&byteLength=" + moreByteLength,
     success: function (data) {
       var oldHeight = $(".log-content")[0].scrollHeight;
       var newlineIndex = data.indexOf('\n');
@@ -83,14 +83,14 @@ function loadMore() {
 function loadNew() {
   $.ajax({
     type: "GET",
-    url: "/log" + baseParams + "&byteLength=0",
+    url: "../log" + baseParams + "&byteLength=0",
     success: function (data) {
       var dataInfo = data.substring(0, data.indexOf('\n')).match(/\d+/g);
       var newDataLen = dataInfo[2] - totalLogLength;
       if (newDataLen != 0) {
         $.ajax({
           type: "GET",
-          url: "/log" + baseParams + "&byteLength=" + newDataLen,
+          url: "../log" + baseParams + "&byteLength=" + newDataLen,
           success: function (data) {
             var newlineIndex = data.indexOf('\n');
             var dataInfo = data.substring(0, newlineIndex).match(/\d+/g);

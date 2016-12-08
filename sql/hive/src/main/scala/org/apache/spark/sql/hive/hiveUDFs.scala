@@ -38,7 +38,7 @@ import org.apache.spark.sql.hive.HiveShim._
 import org.apache.spark.sql.types._
 
 
-private[hive] case class HiveSimpleUDF(
+case class HiveSimpleUDF(
     name: String, funcWrapper: HiveFunctionWrapper, children: Seq[Expression])
   extends Expression with HiveInspectors with CodegenFallback with Logging {
 
@@ -94,7 +94,7 @@ private[hive] case class HiveSimpleUDF(
   }
 
   override def toString: String = {
-    s"$nodeName#${funcWrapper.functionClassName}(${children.mkString(",")})"
+    s"$name#${funcWrapper.functionClassName}(${children.mkString(",")})"
   }
 
   override def prettyName: String = name
@@ -114,7 +114,7 @@ private[hive] class DeferredObjectAdapter(oi: ObjectInspector, dataType: DataTyp
   override def get(): AnyRef = wrap(func(), oi, dataType)
 }
 
-private[hive] case class HiveGenericUDF(
+case class HiveGenericUDF(
     name: String, funcWrapper: HiveFunctionWrapper, children: Seq[Expression])
   extends Expression with HiveInspectors with CodegenFallback with Logging {
 
@@ -184,7 +184,7 @@ private[hive] case class HiveGenericUDF(
  * Operators that require maintaining state in between input rows should instead be implemented as
  * user defined aggregations, which have clean semantics even in a partitioned execution.
  */
-private[hive] case class HiveGenericUDTF(
+case class HiveGenericUDTF(
     name: String,
     funcWrapper: HiveFunctionWrapper,
     children: Seq[Expression])
@@ -266,7 +266,7 @@ private[hive] case class HiveGenericUDTF(
  * Currently we don't support partial aggregation for queries using Hive UDAF, which may hurt
  * performance a lot.
  */
-private[hive] case class HiveUDAFFunction(
+case class HiveUDAFFunction(
     name: String,
     funcWrapper: HiveFunctionWrapper,
     children: Seq[Expression],

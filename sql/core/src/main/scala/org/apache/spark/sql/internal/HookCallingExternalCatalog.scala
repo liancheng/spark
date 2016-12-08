@@ -215,7 +215,7 @@ class HookCallingExternalCatalog(val delegate: ExternalCatalog, val hooks: Catal
       ignoreIfNotExists: Boolean,
       purge: Boolean,
       retainData: Boolean): Unit = {
-    delegate.dropPartitions(db, table, parts, ignoreIfNotExists, purge, retainData: Boolean)
+    delegate.dropPartitions(db, table, parts, ignoreIfNotExists, purge, retainData)
   }
 
   override def renamePartitions(
@@ -268,6 +268,13 @@ class HookCallingExternalCatalog(val delegate: ExternalCatalog, val hooks: Catal
     delegate.listPartitionsByFilter(db, table, predicates)
   }
 
+  override def listPartitionNames(
+      db: String,
+      table: String,
+      partialSpec: Option[TablePartitionSpec]): Seq[String] = {
+    delegate.listPartitionNames(db, table, partialSpec)
+  }
+
   override def createFunction(db: String, funcDefinition: CatalogFunction): Unit = {
     val funcName = funcDefinition.identifier.funcName
     hooks.beforeCreateFunction(db, funcName)
@@ -306,5 +313,11 @@ class HookCallingExternalCatalog(val delegate: ExternalCatalog, val hooks: Catal
     val result = delegate.listFunctions(db, pattern)
     hooks.afterListFunctions(db, Option(pattern))
     result
+  }
+}
+
+object HookCallingExternalCatalog {
+  def unapply(catalog: HookCallingExternalCatalog): Option[ExternalCatalog] = {
+    Some(catalog.delegate)
   }
 }

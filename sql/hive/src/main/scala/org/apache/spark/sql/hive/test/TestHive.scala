@@ -30,7 +30,7 @@ import org.apache.hadoop.hive.serde2.`lazy`.LazySimpleSerDe
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{SparkSession, SQLContext}
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions, SQLContext}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FunctionBuilder
 import org.apache.spark.sql.catalyst.expressions.ExpressionInfo
@@ -78,6 +78,11 @@ class TestHiveContext(
    */
   def this(sc: SparkContext, loadTestTables: Boolean = true) {
     this(new TestHiveSparkSession(HiveUtils.withHiveExternalCatalog(sc), loadTestTables))
+  }
+
+  def this(sc: SparkContext, extensions: SparkSessionExtensions => Unit) {
+    this(sc, false)
+    extensions(sparkSession.extensions)
   }
 
   override def newSession(): TestHiveContext = {
