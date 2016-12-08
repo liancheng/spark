@@ -254,13 +254,6 @@ class HookCallingExternalCatalog(val delegate: ExternalCatalog, val hooks: Catal
     delegate.listPartitions(db, table, partialSpec)
   }
 
-  override def listPartitionNames(
-      db: String,
-      table: String,
-      partialSpec: Option[TablePartitionSpec]): Seq[String] = {
-    delegate.listPartitionNames(db, table, partialSpec)
-  }
-
   override def listPartitionsByFilter(
       db: String,
       table: String,
