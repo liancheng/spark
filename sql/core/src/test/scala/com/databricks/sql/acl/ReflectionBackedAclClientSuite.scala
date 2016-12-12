@@ -27,48 +27,51 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
     super.beforeAll()
   }
 
-  private def token(token: String): Unit = {
+  private def sparkContextToken(token: String): Unit = {
     spark.sparkContext.setLocalProperty(TokenConf.TOKEN_KEY, token)
   }
 
+  private def driverToken(token: String): Unit = {
+    AclClientBackend.localContextToken = Option(token)
+  }
+
   test("getValidPermissions") {
-    token("usr1")
+    sparkContextToken("usr1")
+    driverToken(null)
     val input = Set((tbl1, Select), (tbl1, Modify))
     assert(input === client.getValidPermissions(input))
-    assert(AclClientBackend.token === Some("usr1"))
+    assert(AclClientBackend.token === "usr1")
     assert(AclClientBackend.lastCommandArguments === Seq(
       ("/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`", "SELECT"),
       ("/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`", "MODIFY")))
   }
 
   test("getOwners") {
-    token(null)
+    sparkContextToken("usr3")
     val input = Seq(tbl1, fn1)
     assert(client.getOwners(input) === Map((tbl1, principal1), (fn1, principal1)))
-    assert(AclClientBackend.token === None)
+    assert(AclClientBackend.token === "usr3")
     assert(AclClientBackend.lastCommandArguments === Seq(
       "/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`",
       "/CATALOG/`default`/DATABASE/`db2`/FUNCTION/`fn1`"))
   }
 
   test("listPermissions") {
-    token("usr4")
+    sparkContextToken("usr4")
     assert(client.listPermissions(None, tbl1) ===
       Seq(Permission(principal2, Select, tbl1)))
-    assert(AclClientBackend.token === Some("usr4"))
+    assert(AclClientBackend.token === "usr4")
     assert(AclClientBackend.lastCommandArguments ===
       Seq("/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`"))
-    token(null)
     assert(client.listPermissions(Some(principal1), fn1) ===
       Seq(Permission(principal1, Select, fn1)))
-    assert(AclClientBackend.token === None)
     assert(AclClientBackend.lastCommandArguments === Seq(
       "USER_1",
       "/CATALOG/`default`/DATABASE/`db2`/FUNCTION/`fn1`"))
   }
 
   test("modify") {
-    token("usr8")
+    sparkContextToken("usr8")
     client.modify(Seq(
       GrantPermission(Permission(principal1, Select, tbl1)),
       RevokePermission(Permission(principal2, Select, fn1)),
@@ -76,7 +79,7 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
       Rename(fn1, fn1),
       CreateSecurable(tbl1),
       ChangeOwner(tbl1, principal2)))
-    assert(AclClientBackend.token === Some("usr8"))
+    assert(AclClientBackend.token === "usr8")
     assert(AclClientBackend.lastCommandArguments === Seq(
       ("GRANT", "USER_1", "SELECT",
         "/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`"),
@@ -92,16 +95,45 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
       ("CHANGE_OWNER",
         "/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`", "USER_2", "")))
   }
+
+  test("Context token before driver") {
+    sparkContextToken("sc")
+    driverToken("driver")
+    client.getValidPermissions(Set.empty[(Securable, Action)])
+    assert(AclClientBackend.token == "sc")
+
+    driverToken(null)
+    client.getValidPermissions(Set.empty[(Securable, Action)])
+    assert(AclClientBackend.token == "sc")
+  }
+
+  test("Driver token") {
+    sparkContextToken(null)
+    driverToken("driver")
+    client.getValidPermissions(Set.empty[(Securable, Action)])
+    assert(AclClientBackend.token == "driver")
+  }
+
+  test("No token") {
+    sparkContextToken(null)
+    driverToken(null)
+    intercept[SecurityException] {
+      client.getValidPermissions(Set.empty[(Securable, Action)])
+    }
+  }
 }
 
 object AclClientBackend {
-  var token: Option[String] = None
+  var token: String = _
   var lastCommandArguments: Seq[AnyRef] = Seq.empty
+  var localContextToken: Option[String] = None
 }
 
 class AclClientBackend {
+  def getTokenFromLocalContext: Option[String] = AclClientBackend.localContextToken
+
   def getValidPermissions(
-      token: Option[String],
+      token: String,
       requests: Traversable[(String, String)]): Set[(String, String)] = {
     AclClientBackend.token = token
     AclClientBackend.lastCommandArguments = requests.toSeq
@@ -109,7 +141,7 @@ class AclClientBackend {
   }
 
   def getOwners(
-      token: Option[String],
+      token: String,
       securables: Traversable[String]): Map[String, String] = {
     AclClientBackend.token = token
     AclClientBackend.lastCommandArguments = securables.toSeq
@@ -117,7 +149,7 @@ class AclClientBackend {
   }
 
   def listPermissions(
-      token: Option[String],
+      token: String,
       principal: Option[String],
       securable: String): Seq[(String, String, String)] = {
     AclClientBackend.token = token
@@ -126,7 +158,7 @@ class AclClientBackend {
   }
 
   def modify(
-      token: Option[String],
+      token: String,
       modifications: Seq[(String, String, String, String)]): Unit = {
     AclClientBackend.token = token
     AclClientBackend.lastCommandArguments = modifications

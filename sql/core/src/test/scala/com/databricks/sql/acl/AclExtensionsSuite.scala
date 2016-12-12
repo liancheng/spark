@@ -39,6 +39,7 @@ class AclExtensionsSuite extends SparkFunSuite with BeforeAndAfterEach {
 
     try {
       session.udf.register("plusOne", (value: Int) => value + 1)
+      session.sparkContext.setLocalProperty(TokenConf.TOKEN_KEY, "token")
       session.sql("select plusOne(id) from values 1,2,3,4,5 t(id)")
       assert(AclClientBackend.lastCommandArguments.nonEmpty)
     } finally {

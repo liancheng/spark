@@ -20,24 +20,28 @@ class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
 
   private[this] lazy val backend = backendClazz.newInstance()
 
+  private[this] lazy val getTokenFromLocalContextMethod = {
+    backendClazz.getMethod("getTokenFromLocalContext")
+  }
+
   private[this] lazy val getValidPermissionsMethod = {
     backendClazz.getMethod(
       "getValidPermissions",
-      classOf[Option[String]],
+      classOf[String],
       classOf[Traversable[(String, String)]])
   }
 
   private[this] lazy val getOwnersMethod = {
     backendClazz.getMethod(
       "getOwners",
-      classOf[Option[String]],
+      classOf[String],
       classOf[Traversable[String]])
   }
 
   private[this] lazy val listPermissionsMethod = {
     backendClazz.getMethod(
       "listPermissions",
-      classOf[Option[String]],
+      classOf[String],
       classOf[Option[String]],
       classOf[String])
   }
@@ -45,7 +49,7 @@ class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
   private[this] lazy val modifyMethod = {
     backendClazz.getMethod(
       "modify",
-      classOf[Option[String]],
+      classOf[String],
       classOf[Seq[(String, String, String, String)]])
   }
 
@@ -100,8 +104,10 @@ class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
     modifyMethod.invoke(backend, token, argument)
   }
 
-  private def token: Option[String] = {
+  private def token: String = {
     Option(session.sparkContext.getLocalProperty(TokenConf.TOKEN_KEY))
+      .orElse(getTokenFromLocalContextMethod.invoke(backend).asInstanceOf[Option[String]])
+      .getOrElse(throw new SecurityException("No token to authorize principal"))
   }
 }
 
