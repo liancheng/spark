@@ -54,6 +54,17 @@ $(document).ajaxStart(function () {
     $.blockUI({message: '<h3>Loading Executors Page...</h3>'});
 });
 
+// Return the OrgId part if it appears as the last part of the url.
+function getOrgIdPart(words) {
+    var orgIdPart = words[words.length - 1];
+    // o= is the identifier of a OrgId part.
+    if(orgIdPart.includes("o=")) {
+        return orgIdPart;
+    }
+    // If the url does not OrgId, return an empty string
+    return "";
+}
+
 function createTemplateURI(appId) {
     var words = document.baseURI.split('/');
     var ind = words.indexOf("proxy");
@@ -64,6 +75,16 @@ function createTemplateURI(appId) {
     ind = words.indexOf("history");
     if(ind > 0) {
         var baseURI = words.slice(0, ind).join('/') + '/static/executorspage-template.html';
+        return baseURI;
+    }
+    ind = words.indexOf("sparkui");
+    if(ind > 0) {
+        var orgIdPart = getOrgIdPart(words);
+        // document.baseURI will look like https://<shard-url>/sparkui/<cluster-id>/driver-<spark-context-id>/.... 
+        // words.slice(0, ind + 3).join('/') will give us https://<shard-url>/sparkui/<cluster-id>/driver-<spark-context-id>.
+        // Note: If there is a OrgId, we should have executorspage-template.html?o=<OrgId> instead of
+        // executorspage-template.html/?o=<OrgId>.
+        var baseURI = words.slice(0, ind + 3).join('/') + '/static/executorspage-template.html' + orgIdPart;
         return baseURI;
     }
     return location.origin + "/static/executorspage-template.html";
@@ -83,15 +104,32 @@ function getStandAloneppId(cb) {
         cb(appId);
         return;
     }
-    //Looks like Web UI is running in standalone mode
-    //Let's get application-id using REST End Point
-    $.getJSON(location.origin + "/api/v1/applications", function(response, status, jqXHR) {
-        if (response && response.length > 0) {
-            var appId = response[0].id
-            cb(appId);
-            return;
-        }
-    });
+    // A url from databricks.
+    // https://<shard-url>/sparkui/<cluster-id>/driver-<spark-context-id>/executors/?o=<org-id>
+    ind = words.indexOf("sparkui")
+    if (ind > 0) {
+        var orgIdPart = getOrgIdPart(words);
+        // Re-construct the baseURI, e.g. baseURI will be
+        // https://<shard-url>/sparkui/<cluster-id>/driver-<spark-context-id>
+        var baseURI = words.slice(0, ind + 3).join("/");
+        $.getJSON(baseURI + "/api/v1/applications/" + orgIdPart, function(response, status, jqXHR) {
+            if (response && response.length > 0) {
+                var appId = response[0].id
+                cb(appId);
+                return;
+            }
+        });
+    } else {
+        //Looks like Web UI is running in standalone mode
+        //Let's get application-id using REST End Point
+        $.getJSON(location.origin + "/api/v1/applications", function(response, status, jqXHR) {
+            if (response && response.length > 0) {
+                var appId = response[0].id
+                cb(appId);
+                return;
+            }
+        });
+    }
 }
 
 function createRESTEndPoint(appId) {
@@ -112,6 +150,14 @@ function createRESTEndPoint(appId) {
         } else {
             return newBaseURI + "/api/v1/applications/" + appId + "/" + attemptId + "/allexecutors";
         }
+    }
+    ind = words.indexOf("sparkui");
+    if (ind > 0) {
+        var orgIdPart = getOrgIdPart(words);
+        // Re-construct the baseURI, e.g. baseURI will be
+        // https://<shard-url>/sparkui/<cluster-id>/driver-<spark-context-id>
+        var baseURI = words.slice(0, ind + 3).join("/");
+        return baseURI + "/api/v1/applications/" + appId + "/allexecutors/" + orgIdPart;
     }
     return location.origin + "/api/v1/applications/" + appId + "/allexecutors";
 }
