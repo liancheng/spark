@@ -21,7 +21,7 @@ class HiveCheckPermissionRuleSuite extends CheckRequests {
 
   override val checkRule: CheckPermissions = new HiveCheckPermissions(catalog, null)
 
-  test("Named UDFs") {
+  ignore("Named UDFs") {
     /**
      * Permanent functions require permissions, temporary functions require anonymous
      * permissions.
