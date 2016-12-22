@@ -240,7 +240,6 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case _: SerializeFromObject => true
     case _: Aggregate => true
     case _: RepartitionByExpression => true
-    case _: SortPartitions => true
     case _: SubqueryAlias => true
     case _: Expand => true
     case _: LocalLimit => true

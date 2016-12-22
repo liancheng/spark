@@ -163,8 +163,6 @@ class CheckPermissionRuleSuite extends CheckRequests {
       subqueryExpr, anonymousExpr),
     add("RepartitionByExpression", plan => RepartitionByExpression(Seq(subqueryExpr), plan),
       subqueryExpr),
-    add("SortPartition", plan => SortPartitions(Seq(SortOrder(subqueryExpr, Ascending)), plan),
-      subqueryExpr),
     add("SubqueryAlias", plan => SubqueryAlias("a", plan, None)),
     add("Expand", plan => Expand(Seq.empty, Seq.empty, plan)),
     add("Sort", plan => Sort(Seq(SortOrder(subqueryExpr, Ascending)), true, plan), subqueryExpr),
