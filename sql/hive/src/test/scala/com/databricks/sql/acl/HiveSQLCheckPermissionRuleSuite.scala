@@ -22,7 +22,7 @@ object TestAclClient extends InMemoryAclClient(NamedPrincipal("U")) {
     getOwners(Seq(securable)).get(securable)
   }
 
-  override def getValidPermissions(requests: Traversable[(Securable, Action)])
+  override def getValidPermissions(requests: Seq[(Securable, Action)])
       : Set[(Securable, Action)] = {
     if (underlyingPrincipal == NamedPrincipal("super")) {
       requests.toSet

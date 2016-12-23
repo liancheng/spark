@@ -30,8 +30,8 @@ class PermissionChecker(aclClient: AclClient) extends (Request => Boolean) {
    */
   def apply(request: Request): Boolean = {
     val permissionsToCheck = flattenRequestTree(request)
-    val validPermissions = aclClient.getValidPermissions(permissionsToCheck)
-    val securableOwners = aclClient.getOwners(permissionsToCheck.map(_._1))
+    val validPermissions = aclClient.getValidPermissions(permissionsToCheck.toSeq)
+    val securableOwners = aclClient.getOwners(permissionsToCheck.map(_._1).toSeq)
 
     def chainCheck(requests: Set[Request], parentOwner: Principal): Boolean = {
       requests.forall { request =>

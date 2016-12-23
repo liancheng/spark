@@ -28,14 +28,14 @@ class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
     backendClazz.getMethod(
       "getValidPermissions",
       classOf[String],
-      classOf[Traversable[(String, String)]])
+      classOf[Seq[(String, String)]])
   }
 
   private[this] lazy val getOwnersMethod = {
     backendClazz.getMethod(
       "getOwners",
       classOf[String],
-      classOf[Traversable[String]])
+      classOf[Seq[String]])
   }
 
   private[this] lazy val listPermissionsMethod = {
@@ -53,8 +53,7 @@ class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
       classOf[Seq[(String, String, String, String)]])
   }
 
-  override def getValidPermissions(
-      requests: Traversable[(Securable, Action)]): Set[(Securable, Action)] = {
+  override def getValidPermissions(requests: Seq[(Securable, Action)]): Set[(Securable, Action)] = {
     val argument = requests.map { case (securable, action) =>
       (securable.name, action.name)
     }
@@ -66,7 +65,7 @@ class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
     }
   }
 
-  override def getOwners(securables: Traversable[Securable]): Map[Securable, Principal] = {
+  override def getOwners(securables: Seq[Securable]): Map[Securable, Principal] = {
     val result = getOwnersMethod
       .invoke(backend, token, securables.map(_.name))
       .asInstanceOf[Map[String, String]]

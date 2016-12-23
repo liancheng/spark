@@ -12,8 +12,10 @@ import org.apache.spark.sql.SparkSession
 
 abstract class AbstractNoOpAclClient extends AclClient {
   type Request = (Securable, Action)
-  override def getValidPermissions(requests: Traversable[Request]): Set[Request] = requests.toSet
-  override def getOwners(securables: Traversable[Securable]): Map[Securable, Principal] = Map.empty
+
+  override def getValidPermissions(
+      requests: Seq[(Securable, Action)]): Set[Request] = requests.toSet
+  override def getOwners(securables: Seq[Securable]): Map[Securable, Principal] = Map.empty
   override def modify(modifications: Seq[ModifyPermission]): Unit = {}
   override def listPermissions(
       principal: Option[Principal],

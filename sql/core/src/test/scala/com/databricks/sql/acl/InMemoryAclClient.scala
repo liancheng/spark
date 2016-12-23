@@ -11,7 +11,7 @@ package com.databricks.sql.acl
 import scala.collection.mutable
 
 class InMemoryAclClient(var underlyingPrincipal: Principal) extends AclClient {
-  override def getValidPermissions(requests: Traversable[(Securable, Action)])
+  override def getValidPermissions(requests: Seq[(Securable, Action)])
     : Set[(Securable, Action)] = {
     requests.filter { pair =>
       val (securable, action) = pair
@@ -19,7 +19,7 @@ class InMemoryAclClient(var underlyingPrincipal: Principal) extends AclClient {
     }.toSet
   }
 
-  override def getOwners(securables: Traversable[Securable]): Map[Securable, Principal] = {
+  override def getOwners(securables: Seq[Securable]): Map[Securable, Principal] = {
     val forSecurables = securables.toSet
     allPermissions.filter { perm =>
       perm.action == Action.Own && forSecurables.contains(perm.securable)

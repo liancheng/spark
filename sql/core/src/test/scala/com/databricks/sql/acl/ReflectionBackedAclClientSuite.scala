@@ -38,7 +38,7 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
   test("getValidPermissions") {
     sparkContextToken("usr1")
     driverToken(null)
-    val input = Set((tbl1, Select), (tbl1, Modify))
+    val input = Seq((tbl1, Select), (tbl1, Modify))
     assert(input === client.getValidPermissions(input))
     assert(AclClientBackend.token === "usr1")
     assert(AclClientBackend.lastCommandArguments === Seq(
@@ -99,18 +99,18 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
   test("Context token before driver") {
     sparkContextToken("sc")
     driverToken("driver")
-    client.getValidPermissions(Set.empty[(Securable, Action)])
+    client.getValidPermissions(Seq.empty[(Securable, Action)])
     assert(AclClientBackend.token == "sc")
 
     driverToken(null)
-    client.getValidPermissions(Set.empty[(Securable, Action)])
+    client.getValidPermissions(Seq.empty[(Securable, Action)])
     assert(AclClientBackend.token == "sc")
   }
 
   test("Driver token") {
     sparkContextToken(null)
     driverToken("driver")
-    client.getValidPermissions(Set.empty[(Securable, Action)])
+    client.getValidPermissions(Seq.empty[(Securable, Action)])
     assert(AclClientBackend.token == "driver")
   }
 
@@ -118,7 +118,7 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
     sparkContextToken(null)
     driverToken(null)
     intercept[SecurityException] {
-      client.getValidPermissions(Set.empty[(Securable, Action)])
+      client.getValidPermissions(Seq.empty[(Securable, Action)])
     }
   }
 }

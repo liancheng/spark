@@ -15,12 +15,12 @@ trait AclClient {
    *
    * @param requests to check.
    */
-  def getValidPermissions(requests: Traversable[(Securable, Action)]): Set[(Securable, Action)]
+  def getValidPermissions(requests: Seq[(Securable, Action)]): Set[(Securable, Action)]
 
   /**
    * Retrieve the owners for the given securables.
    */
-  def getOwners(securables: Traversable[Securable]): Map[Securable, Principal]
+  def getOwners(securables: Seq[Securable]): Map[Securable, Principal]
 
   /**
    * List the permission for an (optional) principal and an (optional) object securable. The
