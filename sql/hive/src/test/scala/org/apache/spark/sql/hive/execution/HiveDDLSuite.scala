@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.analysis.{NoSuchPartitionException, TableAl
 import org.apache.spark.sql.catalyst.catalog.{CatalogDatabase, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.execution.command.DDLUtils
-import org.apache.spark.sql.hive.HiveExternalCatalog
+import org.apache.spark.sql.hive.HiveUtils
 import org.apache.spark.sql.hive.test.TestHiveSingleton
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.StaticSQLConf.CATALOG_IMPLEMENTATION
@@ -990,7 +990,7 @@ class HiveDDLSuite
     val indexName = tabName + "_index"
     withTable(tabName) {
       // Spark SQL does not support creating index. Thus, we have to use Hive client.
-      val client = spark.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client
+      val client = HiveUtils.getHiveClient(spark.sharedState)
       sql(s"CREATE TABLE $tabName(a int)")
 
       try {
@@ -1020,7 +1020,7 @@ class HiveDDLSuite
     val tabName = "tab1"
     withTable(tabName) {
       // Spark SQL does not support creating skewed table. Thus, we have to use Hive client.
-      val client = spark.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client
+      val client = HiveUtils.getHiveClient(spark.sharedState)
       client.runSqlHive(
         s"""
            |CREATE Table $tabName(col1 int, col2 int)

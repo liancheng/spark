@@ -131,7 +131,7 @@ case class InsertIntoHiveTable(
   def getExternalTmpPath(path: Path): Path = {
     import org.apache.spark.sql.hive.client.hive._
 
-    val hiveVersion = externalCatalog.asInstanceOf[HiveExternalCatalog].client.version
+    val hiveVersion = HiveUtils.getHiveClient(sqlContext.sharedState).version
     // Before Hive 1.1, when inserting into a table, Hive will create the staging directory under
     // a common scratch directory. After the writing is finished, Hive will simply empty the table
     // directory and move the staging directory to it.

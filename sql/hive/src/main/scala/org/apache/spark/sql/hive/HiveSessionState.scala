@@ -36,13 +36,8 @@ private[hive] class HiveSessionState(sparkSession: SparkSession)
   /**
    * A Hive client used for interacting with the metastore.
    */
-  lazy val metadataHive: HiveClient = {
-    val catalog = sparkSession.sharedState.externalCatalog match {
-      case catalog: HiveExternalCatalog => catalog
-      case HookCallingExternalCatalog(catalog: HiveExternalCatalog) => catalog
-    }
-    catalog.client.newSession()
-  }
+  lazy val metadataHive: HiveClient =
+    HiveUtils.getHiveClient(sparkSession.sharedState).newSession()
 
   /**
    * Internal catalog for managing table and database states.

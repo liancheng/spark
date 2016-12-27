@@ -35,8 +35,7 @@ class HiveExternalCatalogBackwardCompatibilitySuite extends QueryTest
   with SQLTestUtils with TestHiveSingleton with BeforeAndAfterEach {
 
   // To test `HiveExternalCatalog`, we need to read/write the raw table meta from/to hive client.
-  val hiveClient: HiveClient =
-    spark.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client
+  val hiveClient: HiveClient = HiveUtils.getHiveClient(spark.sharedState)
 
   val tempDir = Utils.createTempDir().getCanonicalFile
 

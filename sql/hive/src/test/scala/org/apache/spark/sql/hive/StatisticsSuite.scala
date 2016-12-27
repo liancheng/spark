@@ -285,7 +285,7 @@ class StatisticsSuite extends StatisticsCollectionTestBase with TestHiveSingleto
       sql(s"analyze table $tableName compute STATISTICS FOR COLUMNS " + stats.keys.mkString(", "))
 
       // Validate statistics
-      val hiveClient = spark.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client
+      val hiveClient = HiveUtils.getHiveClient(spark.sharedState)
       val table = hiveClient.getTable("default", tableName)
 
       val props = table.properties.filterKeys(_.startsWith("spark.sql.statistics.colStats"))

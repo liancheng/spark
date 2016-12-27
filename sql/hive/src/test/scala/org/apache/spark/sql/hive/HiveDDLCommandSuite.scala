@@ -589,7 +589,7 @@ class HiveDDLCommandSuite extends PlanTest with SQLTestUtils with TestHiveSingle
   }
 
   test("SPARK-15887: hive-site.xml should be loaded") {
-    val hiveClient = spark.sharedState.externalCatalog.asInstanceOf[HiveExternalCatalog].client
+    val hiveClient = HiveUtils.getHiveClient(spark.sharedState)
     assert(hiveClient.getConf("hive.in.test", "") == "true")
   }
 }

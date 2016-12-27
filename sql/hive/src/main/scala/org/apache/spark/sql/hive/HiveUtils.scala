@@ -37,7 +37,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.hive.client._
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.{HookCallingExternalCatalog, SharedState, SQLConf}
 import org.apache.spark.sql.internal.SQLConf._
 import org.apache.spark.sql.internal.StaticSQLConf.{CATALOG_IMPLEMENTATION, WAREHOUSE_PATH}
 import org.apache.spark.sql.types._
@@ -454,5 +454,12 @@ private[spark] object HiveUtils extends Logging {
     case (s: String, StringType) => "\"" + s + "\""
     case (decimal, DecimalType()) => decimal.toString
     case (other, tpe) if primitiveTypes contains tpe => other.toString
+  }
+
+  /** Get the Hive client from a SharedState. */
+  def getHiveClient(state: SharedState): HiveClient = state.externalCatalog match {
+    case c: HiveExternalCatalog => c.client
+    case HookCallingExternalCatalog(c: HiveExternalCatalog) => c.client
+    case _ => sys.error(s"Cannot extract Hive client from $state")
   }
 }
