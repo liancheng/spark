@@ -21,7 +21,6 @@ package org.apache.hive.service.cli.thrift;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.security.PrivilegedExceptionAction;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
@@ -73,7 +72,6 @@ public class ThriftHttpServlet extends TServlet {
   private final String authType;
   private final UserGroupInformation serviceUGI;
   private final UserGroupInformation httpUGI;
-  private HiveConf hiveConf = new HiveConf();
 
   // Class members for cookie based authentication.
   private CookieSigner signer;
@@ -88,7 +86,8 @@ public class ThriftHttpServlet extends TServlet {
   private Map<String, String> customHeadersToProperties;
 
   public ThriftHttpServlet(TProcessor processor, TProtocolFactory protocolFactory,
-      String authType, UserGroupInformation serviceUGI, UserGroupInformation httpUGI) {
+      String authType, UserGroupInformation serviceUGI, UserGroupInformation httpUGI,
+      HiveConf hiveConf) {
     super(processor, protocolFactory);
     this.authType = authType;
     this.serviceUGI = serviceUGI;

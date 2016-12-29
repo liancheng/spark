@@ -192,6 +192,8 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case drop: DropFunctionCommand =>
       toSecurables(FunctionIdentifier(drop.functionName, drop.databaseName)).map(Own)
 
+    case show: ShowDatabasesCommand =>
+      Seq(Request(Catalog, ReadMetadata))
     case show: ShowTablesCommand =>
       toSecurables(show.databaseName).map(ReadMetadata)
     case show: ShowFunctionsCommand =>
@@ -264,6 +266,7 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case _: Generate => true
     case _: ExplainCommand => true
     case NoOpRunnableCommand => true
+    case _: ShowPermissionsCommand => true
     case _ => false
   }
 

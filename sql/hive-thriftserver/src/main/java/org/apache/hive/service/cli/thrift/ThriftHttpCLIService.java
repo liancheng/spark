@@ -130,7 +130,7 @@ public class ThriftHttpCLIService extends ThriftCLIService {
       UserGroupInformation httpUGI = cliService.getHttpUGI();
       String authType = hiveConf.getVar(ConfVars.HIVE_SERVER2_AUTHENTICATION);
       TServlet thriftHttpServlet = new ThriftHttpServlet(processor, protocolFactory, authType,
-          serviceUGI, httpUGI);
+          serviceUGI, httpUGI, hiveConf);
 
       // Context handler
       final ServletContextHandler context = new ServletContextHandler(
