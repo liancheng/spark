@@ -8,8 +8,13 @@
  */
 package com.databricks.sql.acl
 
+import scala.util.control.NonFatal
+
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalog.BaseCatalogHooks
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.internal.StaticSQLConf
 
 /**
  * Databricks Spark ACL configuration object. In order to use this, you will need to pass the
@@ -21,21 +26,58 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
  */
 class AclExtensions extends (SparkSessionExtensions => Unit) {
   def apply(extensions: SparkSessionExtensions): Unit = {
-    extensions.injectAnalyzerRule { _ =>
-      AddExplainNode
+    extensions.injectAnalyzerRule { session =>
+      if (isAclEnabled(session)) {
+        AddExplainNode
+      } else {
+        NoOpRule
+      }
     }
     extensions.injectAnalyzerRule { session =>
-      new ResolveDropCommand(session)
+      if (isAclEnabled(session)) {
+        new ResolveDropCommand(session)
+      } else {
+        NoOpRule
+      }
     }
-    extensions.injectCheckAnalysisRule(createPermissionsCheck)
-    extensions.injectOptimizerRule { _ =>
-      CleanUpExplainNode
+    extensions.injectCheckAnalysisRule { session =>
+      if (isAclEnabled(session)) {
+        createPermissionsCheck(session)
+      } else {
+        _ => ()
+      }
+    }
+    extensions.injectOptimizerRule { session =>
+      if (isAclEnabled(session)) {
+        CleanUpExplainNode
+      } else {
+        NoOpRule
+      }
     }
     extensions.injectParser { (session, delegate) =>
-      new AclCommandParser(client(session), delegate)
+      if (isAclEnabled(session)) {
+        new AclCommandParser(client(session), delegate)
+      } else {
+        delegate
+      }
     }
     extensions.injectCatalogHooks { session =>
-      new AclIntegratedCatalogHooks(client(session))
+      if (isAclEnabled(session)) {
+        new AclIntegratedCatalogHooks(client(session))
+      } else {
+        new BaseCatalogHooks
+      }
+    }
+  }
+
+  /**
+   * Check if ACLs are enabled.
+   */
+  private def isAclEnabled(session: SparkSession): Boolean = {
+    try {
+      session.conf.get(StaticSQLConf.ACL_ENABLED.key, "false").toBoolean
+    } catch {
+      case NonFatal(_) => false
     }
   }
 
@@ -51,4 +93,11 @@ class AclExtensions extends (SparkSessionExtensions => Unit) {
   protected def createPermissionsCheck(session: SparkSession): LogicalPlan => Unit = {
     new CheckPermissions(session.catalog, client(session))
   }
+}
+
+/**
+ * No-op rule used when ACLs are disabled.
+ */
+object NoOpRule extends Rule[LogicalPlan] {
+  override def apply(plan: LogicalPlan): LogicalPlan = plan
 }

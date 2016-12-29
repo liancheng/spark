@@ -1013,4 +1013,30 @@ object StaticSQLConf {
     .doc("Only used for internal debugging. Not all functions are supported when it is enabled.")
     .booleanConf
     .createWithDefault(false)
+
+  val SPARK_SESSION_EXTENSIONS = buildConf("spark.sql.extensions")
+    .doc("Name of the class used to configure Spark Session extensions. The class should" +
+      "implement Function1[SparkSessionExtension, Unit], and must have a no-args constructor.")
+    .stringConf
+    .createOptional
+
+  val ACL_PROVIDER = buildConf("spark.databricks.acl.provider")
+    .internal()
+    .doc("Name of the AclProvider. This class is responsible for creating an AclClient. This " +
+      "class should implement the com.databricks.sql.acl.AclProvider trait and provide a " +
+      "no-args constructor.")
+    .stringConf
+    .createOptional
+
+  val ACL_CLIENT_BACKEND = buildConf("spark.databricks.acl.client")
+    .internal()
+    .doc("Name of the ACL client backend used by the ReflectionBackedAclClient.")
+    .stringConf
+    .createOptional
+
+  val ACL_ENABLED = buildConf("spark.databricks.acl.enabled")
+    .internal()
+    .doc("Whether the SQL-based Access Control is enabled.")
+    .booleanConf
+    .createWithDefault(false)
 }

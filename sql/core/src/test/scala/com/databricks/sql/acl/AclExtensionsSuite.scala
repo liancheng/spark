@@ -26,26 +26,43 @@ class AclExtensionsSuite extends SparkFunSuite with BeforeAndAfterEach {
 
   override protected def afterEach(): Unit = clearSession()
 
-  test("AclExtensions with Reflection ACL Backend") {
-    val session = SparkSession.builder()
-      .master("local[1]")
-      .config("spark.sql.extensions",
-        classOf[AclExtensions].getCanonicalName)
-      .config("spark.databricks.acl.provider",
-        classOf[ReflectionBackedAclProvider].getCanonicalName)
-      .config("spark.databricks.acl.client",
-        classOf[AclClientBackend].getCanonicalName)
-      .getOrCreate()
-
-    try {
-      session.udf.register("plusOne", (value: Int) => value + 1)
-      session.sparkContext.setLocalProperty(TokenConf.TOKEN_KEY, "token")
-      session.sql("select plusOne(id) from values 1,2,3,4,5 t(id)")
-      assert(AclClientBackend.lastCommandArguments.nonEmpty)
-    } finally {
-      session.stop()
+  def testAclExtensionsWithReflectionBackend(enabled: Option[String])(check: => Unit): Unit = {
+    val value = enabled.getOrElse("<default>")
+    test(s"AclExtensions with Reflection ACL Backend - spark.databricks.acl.enabled=$value") {
+      val builder = SparkSession.builder()
+        .master("local[1]")
+        .config("spark.sql.extensions",
+          classOf[AclExtensions].getCanonicalName)
+        .config("spark.databricks.acl.provider",
+          classOf[ReflectionBackedAclProvider].getCanonicalName)
+        .config("spark.databricks.acl.client",
+          classOf[AclClientBackend].getCanonicalName)
+      enabled.foreach { value =>
+        builder.config("spark.databricks.acl.enabled", value)
+      }
+      val session = builder.getOrCreate()
+      try {
+        session.udf.register("plusOne", (value: Int) => value + 1)
+        session.sparkContext.setLocalProperty(TokenConf.TOKEN_KEY, "token")
+        session.sql("select plusOne(id) from values 1,2,3,4,5 t(id)")
+        check
+      } finally {
+        session.stop()
+        AclClientBackend.clear()
+      }
     }
+  }
 
+  testAclExtensionsWithReflectionBackend(Option("true")) {
+    assert(AclClientBackend.lastCommandArguments.nonEmpty)
+  }
+
+  testAclExtensionsWithReflectionBackend(Option("false")) {
+    assert(AclClientBackend.lastCommandArguments.isEmpty)
+  }
+
+  testAclExtensionsWithReflectionBackend(None) {
+    assert(AclClientBackend.lastCommandArguments.isEmpty)
   }
 
   test("AclExtensions with Reflection Dummy Backend") {
@@ -55,6 +72,7 @@ class AclExtensionsSuite extends SparkFunSuite with BeforeAndAfterEach {
         classOf[AclExtensions].getCanonicalName)
       .config("spark.databricks.acl.provider",
         classOf[NoOpAclProvider].getCanonicalName)
+      .config("spark.databricks.acl.enabled", "true")
       .getOrCreate()
     try {
       session.udf.register("plusOne", (value: Int) => value + 1)
@@ -69,6 +87,7 @@ class AclExtensionsSuite extends SparkFunSuite with BeforeAndAfterEach {
       .master("local[1]")
       .config("spark.sql.extensions", classOf[AclExtensions].getCanonicalName)
       .config("spark.databricks.acl.provider", "bad.AclProv")
+      .config("spark.databricks.acl.enabled", "true")
       .getOrCreate()
 
     try {

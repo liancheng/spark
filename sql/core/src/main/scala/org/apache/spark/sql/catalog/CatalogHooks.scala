@@ -86,7 +86,7 @@ trait CatalogHooks {
 /**
  * Catalog hooks that do nothing.
  */
-abstract class BaseCatalogHooks extends CatalogHooks {
+class BaseCatalogHooks extends CatalogHooks {
   override def beforeListDatabases(pattern: Option[String]): Unit = { }
   override def afterListDatabases(pattern: Option[String]): Unit = { }
   override def beforeCreateDatabase(db: String): Unit = { }

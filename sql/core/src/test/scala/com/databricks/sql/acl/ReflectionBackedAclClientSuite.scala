@@ -12,6 +12,7 @@ import com.databricks.sql.acl.Action.{Modify, Select}
 
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
+import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.test.SharedSQLContext
 
 class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext {
@@ -23,7 +24,9 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
   lazy val client = new ReflectionBackedAclClient(spark)
 
   protected override def beforeAll(): Unit = {
-    sparkConf.set(TokenConf.BACKEND_CLASSNAME_KEY, classOf[AclClientBackend].getCanonicalName)
+    sparkConf.set(
+      StaticSQLConf.ACL_CLIENT_BACKEND.key,
+      classOf[AclClientBackend].getCanonicalName)
     super.beforeAll()
   }
 
@@ -127,6 +130,11 @@ object AclClientBackend {
   var token: String = _
   var lastCommandArguments: Seq[AnyRef] = Seq.empty
   var localContextToken: Option[String] = None
+  def clear(): Unit = {
+    token = null
+    lastCommandArguments = Seq.empty
+    localContextToken = None
+  }
 }
 
 class AclClientBackend {

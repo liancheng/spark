@@ -9,6 +9,7 @@
 package com.databricks.sql.acl
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.internal.StaticSQLConf
 
 /**
  * The [[AclProvider]] provides the machinery to create an [[AclClient]]. An [[AclProvider]]
@@ -22,8 +23,6 @@ trait AclProvider {
 }
 
 object AclProvider {
-  val CONF_KEY = "spark.databricks.acl.provider"
-
   /**
    * Create an [[AclProvider]] using reflection. The 'spark.databricks.acl.provider' configuration
    * property is used to find the required [[AclProvider]] implementation. An error will be thrown
@@ -32,7 +31,7 @@ object AclProvider {
   def provider(session: SparkSession): AclProvider = {
     // Create a provider.
     try {
-      val name = session.conf.get(AclProvider.CONF_KEY)
+      val name = session.conf.get(StaticSQLConf.ACL_PROVIDER.key)
       // scalastyle:off classforname
       Class.forName(name).newInstance().asInstanceOf[AclProvider]
       // scalastyle:on classforname
