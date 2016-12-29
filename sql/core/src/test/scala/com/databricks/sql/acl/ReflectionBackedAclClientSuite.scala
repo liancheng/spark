@@ -39,7 +39,7 @@ class ReflectionBackedAclClientSuite extends SparkFunSuite with SharedSQLContext
     sparkContextToken("usr1")
     driverToken(null)
     val input = Seq((tbl1, Select), (tbl1, Modify))
-    assert(input === client.getValidPermissions(input))
+    assert(input.toSet === client.getValidPermissions(input))
     assert(AclClientBackend.token === "usr1")
     assert(AclClientBackend.lastCommandArguments === Seq(
       ("/CATALOG/`default`/DATABASE/`db1`/TABLE/`tbl_x`", "SELECT"),
@@ -134,7 +134,7 @@ class AclClientBackend {
 
   def getValidPermissions(
       token: String,
-      requests: Traversable[(String, String)]): Set[(String, String)] = {
+      requests: Seq[(String, String)]): Set[(String, String)] = {
     AclClientBackend.token = token
     AclClientBackend.lastCommandArguments = requests.toSeq
     requests.toSet
@@ -142,7 +142,7 @@ class AclClientBackend {
 
   def getOwners(
       token: String,
-      securables: Traversable[String]): Map[String, String] = {
+      securables: Seq[String]): Map[String, String] = {
     AclClientBackend.token = token
     AclClientBackend.lastCommandArguments = securables.toSeq
     securables.map(_ -> "USER_1").toMap
