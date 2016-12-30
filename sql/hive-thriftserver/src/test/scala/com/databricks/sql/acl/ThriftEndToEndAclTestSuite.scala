@@ -110,7 +110,8 @@ class ThriftEndToEndAclTestSuite extends HiveThriftServer2Test {
     "--conf spark.databricks.acl.provider=" +
       "com.databricks.sql.acl.ReflectionBackedAclProvider",
     "--conf spark.databricks.acl.client=" +
-      "com.databricks.sql.acl.SharedAclBackend"
+      "com.databricks.sql.acl.SharedAclBackend",
+    "--conf spark.databricks.acl.enabled=true"
   )
 
   /**
