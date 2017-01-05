@@ -139,6 +139,8 @@ class AstCommandBuilder(client: AclClient)
         AnonymousFunction
       case AclCommandBaseParser.FUNCTION =>
         Function(visitFunctionIdentifier(ctx.qualifiedName))
+      case AclCommandBaseParser.FILE =>
+        AnyFile
       case _ =>
         throw new ParseException("Unknown Securable Object", ctx)
     }

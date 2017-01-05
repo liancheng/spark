@@ -81,6 +81,12 @@ class AclCommandParseSuite extends PlanTest {
         client,
         Permission(user3, Select, AnonymousFunction) :: Nil))
 
+    checkAnswer(
+      "GRANT SELECT ON ANY FILE TO user3",
+      GrantPermissionsCommand(
+        client,
+        Permission(user3, Select, AnyFile) :: Nil))
+
     intercept("GRANT BLOB ON x TO `r2d2`", "Unknown ActionType")
 
     intercept("GRANT SELECT ON CAR x TO `r2d2`")
@@ -115,6 +121,12 @@ class AclCommandParseSuite extends PlanTest {
       RevokePermissionsCommand(
         client,
         Permission(user3, Select, AnonymousFunction) :: Nil))
+
+    checkAnswer(
+      "REVOKE SELECT ON ANY FILE FROM user3",
+      RevokePermissionsCommand(
+        client,
+        Permission(user3, Select, AnyFile) :: Nil))
 
     intercept("GRANT MOVE ON x TO c3po", "Unknown ActionType")
 

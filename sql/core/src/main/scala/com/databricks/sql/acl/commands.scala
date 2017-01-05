@@ -38,6 +38,8 @@ trait AclCommand extends RunnableCommand {
         Some(Function(FunctionIdentifier(fn, Option(qualified.database))))
       case Function(FunctionIdentifier(fn, Some(db))) if catalog.functionExists(db, fn) =>
         Some(securable)
+      case AnyFile =>
+        Some(securable)
       case _ => None
     }
   }

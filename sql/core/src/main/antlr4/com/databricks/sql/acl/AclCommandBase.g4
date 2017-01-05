@@ -39,6 +39,7 @@ securable
     | objectType=VIEW qualifiedName
     | objectType=FUNCTION qualifiedName
     | ANONYMOUS objectType=FUNCTION
+    | ANY objectType=FILE
     | objectType=TABLE? qualifiedName
     ;
 
@@ -58,7 +59,7 @@ quotedIdentifier
 
 nonReserved
     : ALTER | OWNER | TO | MSCK | REPAIR | PRIVILEGES | SHOW | GRANT | ON | ALL | WITH | OPTION |
-      REVOKE | FOR | FROM | CATALOG | DATABASE | TABLE | VIEW | FUNCTION | ANONYMOUS
+      REVOKE | FOR | FROM | CATALOG | DATABASE | TABLE | VIEW | FUNCTION | ANONYMOUS | FILE | ANY
     ;
 
 ALTER: 'ALTER';
@@ -82,6 +83,8 @@ TABLE: 'TABLE';
 VIEW: 'VIEW';
 FUNCTION: 'FUNCTION';
 ANONYMOUS: 'ANONYMOUS';
+FILE: 'FILE';
+ANY: 'ANY';
 
 STRING
     : '\'' ( ~('\''|'\\') | ('\\' .) )* '\''

@@ -8,7 +8,7 @@
  */
 package com.databricks.sql.acl
 
-import com.databricks.sql.acl.Action.ReadMetadata
+import com.databricks.sql.acl.Action.{ReadMetadata, Select}
 import org.apache.hadoop.fs.Path
 import org.mockito.Mockito._
 
@@ -96,6 +96,12 @@ class CheckPermissionRuleSuite extends CheckRequests {
     val mockBaseRel = mock(classOf[BaseRelation])
     when(mockBaseRel.schema).thenReturn(new StructType)
     LogicalRelation(mockBaseRel, None, Some(createCatalogTable(temp1)))
+  }
+
+  protected def anonymousRel(): LogicalRelation = {
+    val mockBaseRel = mock(classOf[HadoopFsRelation])
+    when(mockBaseRel.schema).thenReturn(new StructType)
+    LogicalRelation(mockBaseRel, None, None)
   }
 
   val db: String = "PERM1"
@@ -193,7 +199,8 @@ class CheckPermissionRuleSuite extends CheckRequests {
 
   private val ddlOnlyCommands: Seq[(String, LogicalPlan, Set[Request])] = Seq(
     addDDL("create temp view", CreateTempViewUsing(
-      TableIdentifier("blah"), None, false, false, null, Map.empty)),
+      TableIdentifier("blah"), None, false, false, null, Map.empty),
+      Request(AnyFile, Action.Select)),
     addDDL("createdstable", CreateDataSourceTableCommand(
       createCatalogTable(T1), false),
       Request(Database(T1.database.get), Action.Create)),
@@ -231,7 +238,16 @@ class CheckPermissionRuleSuite extends CheckRequests {
     addDDL("dropfunc", DropFunctionCommand(func1.database, func1.funcName, false, false),
       Request(Function(func1), Action.Own)),
     addDDL("dropfunctmp", DropFunctionCommand(tempFunc1.database, tempFunc1.funcName, false, true)),
-    addDDL("noop", NoOpRunnableCommand)
+    addDDL("noop", NoOpRunnableCommand),
+    addDDL("showdatabases", ShowDatabasesCommand(None), ReadMetadata(Catalog)),
+    addDDL("showtables", ShowTablesCommand(Option(db), None), ReadMetadata(Database(db))),
+    addDDL("showfunctions", ShowFunctionsCommand(Option(db), None, true, true),
+      ReadMetadata(Database(db))),
+    addDDL("showpartitions", ShowPartitionsCommand(T1, None), ReadMetadata(Table(T1))),
+    addDDL("showcolmns", ShowColumnsCommand(None, T1), ReadMetadata(Table(T1))),
+    addDDL("showcreatetable", ShowCreateTableCommand(T1), ReadMetadata(Table(T1))),
+    addDDL("showpermissions", ShowPermissionsCommand(NoOpAclClient, None, Catalog)),
+    addDDL("logicalrelation", anonymousRel(), Select(AnyFile))
   )
   private def mockedLogicalRelation(tableId: TableIdentifier): LogicalRelation = {
     val mocked = mock(classOf[LogicalRelation])

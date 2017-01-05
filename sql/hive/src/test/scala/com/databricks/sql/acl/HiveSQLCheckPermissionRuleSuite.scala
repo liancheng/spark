@@ -8,6 +8,8 @@
  */
 package com.databricks.sql.acl
 
+import java.nio.file.Files
+
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.sql._
@@ -538,5 +540,29 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     assertNoOp("drop table if exists perm.tblx")
     assertFail("drop function perm.fnx")
     assertNoOp("drop function if exists perm.fnx")
+  }
+
+  test("query on file") {
+    val path = Files.createTempDirectory("somedata").toString + "/SC-5483"
+    asUser("super") {
+      spark.range(1000).write.parquet(path)
+    }
+    asUser("U") {
+      intercept[SecurityException] {
+        spark.sql(s"select * from parquet.`$path`")
+      }
+      intercept[SecurityException] {
+        spark.sql(s"create temporary view x using parquet options(path '$path')")
+      }
+    }
+    asUser("super") {
+      spark.sql("grant select on any file to U")
+    }
+    asUser("U") {
+      assert(spark.sql(s"select * from parquet.`$path`").count === 1000L)
+      spark.sql(s"create temporary view x using parquet options(path '$path')")
+      assert(spark.sql("select * from x").count === 1000L)
+      spark.sql(s"drop view x")
+    }
   }
 }

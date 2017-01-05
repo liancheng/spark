@@ -105,6 +105,11 @@ class StringSerializationSuite extends SparkFunSuite{
     assert(e.getMessage.contains("A database is not defined for FUNCTION"))
   }
 
+  test("anonymous objects") {
+    roundTripSecurable(AnyFile, "/ANY_FILE")
+    roundTripSecurable(AnonymousFunction, "/ANONYMOUS_FUNCTION")
+  }
+
   test("invalid names") {
     def checkFail(in: String): Unit = {
       val e = intercept[IllegalArgumentException](Securable.fromString(in))

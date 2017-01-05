@@ -80,6 +80,8 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
       case rel: CatalogRelation if isTempDb(rel.catalogTable.identifier.database) => Nil
       case rel: CatalogRelation => Seq(Request(Table(rel.catalogTable.identifier), Select))
 
+      case LogicalRelation(_: HadoopFsRelation, _, None) =>
+        Seq(Select(AnyFile))
       case LogicalRelation(_, _, None) => Nil
       case LogicalRelation(_, _, Some(tableId)) if isTempDb(tableId.identifier.database) => Nil
       case LogicalRelation(_, _, Some(tableId)) =>
@@ -131,7 +133,8 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case create: CreateTable =>
       toSecurables(create.tableDesc.identifier.database).map(Create) ++
         create.query.toSeq.flatMap(queryToRequests)
-    case create: CreateTempViewUsing => Nil
+    case _: CreateTempViewUsing =>
+      Seq(Select(AnyFile))
     case create: CreateDataSourceTableCommand =>
       toSecurables(create.table.identifier.database).map(Create)
     case create: CreateTableCommand =>
@@ -192,7 +195,7 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case drop: DropFunctionCommand =>
       toSecurables(FunctionIdentifier(drop.functionName, drop.databaseName)).map(Own)
 
-    case show: ShowDatabasesCommand =>
+    case _: ShowDatabasesCommand =>
       Seq(Request(Catalog, ReadMetadata))
     case show: ShowTablesCommand =>
       toSecurables(show.databaseName).map(ReadMetadata)

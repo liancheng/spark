@@ -139,6 +139,8 @@ object Securable {
     parseString(rep) match {
       case Seq("ANONYMOUS_FUNCTION") =>
         AnonymousFunction
+      case Seq("ANY_FILE") =>
+        AnyFile
       case Seq("CATALOG", "default") =>
         Catalog
       case Seq("CATALOG", "default", "DATABASE", db) =>
@@ -200,6 +202,12 @@ object Function {
 case object AnonymousFunction extends SecurableFunction {
   override val key: Option[Nothing] = None
   override def typeName: String = "ANONYMOUS_FUNCTION"
+  override val name: String = "/" + typeName
+}
+
+case object AnyFile extends Securable {
+  override val key: Option[Nothing] = None
+  override def typeName: String = "ANY_FILE"
   override val name: String = "/" + typeName
 }
 
@@ -275,12 +283,12 @@ object Action {
     override val name: String = "SELECT"
 
     override def validateRequest(securable: Securable): Boolean = securable match {
-      case _: Table | _: SecurableFunction => true
+      case _: Table | _: SecurableFunction | AnyFile => true
       case _ => false
     }
 
     override def validateGrant(securable: Securable): Boolean = securable match {
-      case Catalog | _: Database | _: Table | _: SecurableFunction => true
+      case Catalog | _: Database | _: Table | _: SecurableFunction | AnyFile => true
       case _ => false
     }
   }
@@ -290,12 +298,12 @@ object Action {
     override val name: String = "MODIFY"
 
     override def validateRequest(securable: Securable): Boolean = securable match {
-      case _: Table => true
+      case _: Table | AnyFile => true
       case _ => false
     }
 
     override def validateGrant(securable: Securable): Boolean = securable match {
-      case Catalog | _: Database | _: Table => true
+      case Catalog | _: Database | _: Table | AnyFile => true
       case _ => false
     }
   }
