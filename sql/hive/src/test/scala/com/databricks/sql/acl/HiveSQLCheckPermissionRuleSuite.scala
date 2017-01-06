@@ -57,7 +57,7 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
   }
 
   override def afterEach(): Unit = {
-    TestAclClient.clearAll
+    TestAclClient.clearAll()
     spark.catalog.setCurrentDatabase("default")
   }
 
@@ -67,12 +67,12 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
 
   def withDatabase(dbName: String, owner: String)(action: => Unit): Unit = {
     try {
-      asUser(owner) { spark.sql(s"create database ${dbName}") }
+      asUser(owner) { spark.sql(s"create database $dbName") }
       action
     } finally {
       asUser("super") {
         if (spark.catalog.databaseExists(dbName)) {
-          spark.sql(s"drop database ${dbName} cascade")
+          spark.sql(s"drop database $dbName cascade")
         }
       }
     }
@@ -91,9 +91,25 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
       action
     } finally {
       asUser("super") {
-        if (spark.catalog.tableExists(tableName.database.orNull, tableName.table)) {
-          spark.sql(s"drop table ${tableName.toString}")
-        }
+        spark.sql(s"drop table if exists $tableName")
+      }
+    }
+  }
+
+  def withView(
+      viewName: TableIdentifier,
+      sourceName: TableIdentifier,
+      owner: String)(
+      action: => Unit): Unit = {
+    try {
+      val temporary = if (viewName.database.isDefined) "" else "temporary"
+      asUser(owner) {
+        spark.sql(s"create $temporary view $viewName as select * from $sourceName")
+      }
+      action
+    } finally {
+      asUser("super") {
+        spark.sql(s"drop view if exists $viewName")
       }
     }
   }
@@ -148,22 +164,22 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     val tableId = TableIdentifier("t1", Some("perm"))
     withTable(tableId, "super") {
       intercept[SecurityException] {
-        asUser("U") { spark.sql(s"drop table ${tableId}") }
+        asUser("U") { spark.sql(s"drop table $tableId") }
       }
-      asUser("super") { spark.sql(s"alter table ${tableId} owner to U") }
-      asUser("U") { spark.sql(s"drop table ${tableId}") }
+      asUser("super") { spark.sql(s"alter table $tableId owner to U") }
+      asUser("U") { spark.sql(s"drop table $tableId") }
     }
   }
 
   test("select from table") {
     val tableId = TableIdentifier("t7", Some("perm"))
     withTable(tableId, "super") {
-      asUser("super") { spark.sql(s"SELECT * FROM ${tableId}") }
+      asUser("super") { spark.sql(s"SELECT * FROM $tableId") }
       intercept[SecurityException] {
-        asUser("U") { spark.sql(s"SELECT * FROM ${tableId}") }
+        asUser("U") { spark.sql(s"SELECT * FROM $tableId") }
       }
-      asUser("super") { spark.sql(s"grant select on table ${tableId} to U") }
-      asUser("U") { spark.sql(s"SELECT * FROM ${tableId}") }
+      asUser("super") { spark.sql(s"grant select on table $tableId to U") }
+      asUser("U") { spark.sql(s"SELECT * FROM $tableId") }
     }
   }
 
@@ -183,15 +199,15 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
 
   test("select from temp view") {
     val tableId = TableIdentifier("t1", Some("perm"))
+    val viewId = TableIdentifier("v1", None)
     withTable(tableId, "super") {
-      asUser("super") {
-        spark.sql(s"create temporary view v1 as select * from ${tableId}")
-      }
-      intercept[SecurityException] {
+      withView(viewId, tableId, "super") {
+        intercept[SecurityException] {
+          asUser("U") { spark.sql("select * from v1") }
+        }
+        asUser("super") { spark.sql(s"grant select on table $tableId to U") }
         asUser("U") { spark.sql("select * from v1") }
       }
-      asUser("super") { spark.sql(s"grant select on table ${tableId} to U") }
-      asUser("U") { spark.sql("select * from v1") }
     }
   }
 
@@ -199,38 +215,37 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     val tableId = TableIdentifier("t1", Some("perm"))
     val viewId = TableIdentifier("v1", Some("perm"))
     withTable(tableId, "super") {
-      asUser("super") {
-        spark.sql(s"create view ${viewId.toString} as select * from ${tableId}")
+      withView(viewId, tableId, "super") {
+        intercept[SecurityException] {
+          asUser("U") { spark.sql(s"select * from $viewId") }
+        }
+        asUser("super") { spark.sql(s"grant select on table $tableId to U") }
+        intercept[SecurityException] {
+          asUser("U") { spark.sql(s"select * from $viewId") }
+        }
+        asUser("super") { spark.sql(s"revoke select on table $tableId from U") }
+        asUser("super") { spark.sql(s"grant select on view $viewId to U") }
+        asUser("U") { spark.sql(s"select * from $viewId") }
+        asUser("super") { spark.sql(s"revoke select on view $viewId from U") }
       }
-      intercept[SecurityException] {
-        asUser("U") { spark.sql(s"select * from ${viewId.toString}") }
-      }
-      asUser("super") { spark.sql(s"grant select on table ${tableId} to U") }
-      intercept[SecurityException] {
-        asUser("U") { spark.sql(s"select * from ${viewId.toString}") }
-      }
-      asUser("super") { spark.sql(s"revoke select on table ${tableId} from U") }
-      asUser("super") { spark.sql(s"grant select on view ${viewId.toString} to U") }
-      asUser("U") { spark.sql(s"select * from ${viewId.toString}") }
-      asUser("super") { spark.sql(s"revoke select on view ${viewId.toString} from U") }
     }
   }
 
   test("Caching is irrelevant") {
     val t1 = TableIdentifier("t1", Some("perm"))
     val t2 = TableIdentifier("t2", Some("perm"))
-    val joinSql = s"select * from ${t1} cross join (select a from ${t2} where p < 5)"
+    val joinSql = s"select * from $t1 cross join (select a from $t2 where p < 5)"
     withTable(t1, "super") {
-      asUser("super") { spark.sql(s"insert into ${t1} select * from " +
+      asUser("super") { spark.sql(s"insert into $t1 select * from " +
         s"range(1, 10) cross join range(1, 10)").collect() }
       withTable(t2, "super") {
-        asUser("super") { spark.sql(s"insert into ${t2} select * from " +
+        asUser("super") { spark.sql(s"insert into $t2 select * from " +
           s"range(1, 10) cross join range(1, 10)").collect() }
-        asUser("super") { spark.sql(s"grant select on ${t2} to U") }
+        asUser("super") { spark.sql(s"grant select on $t2 to U") }
         intercept[SecurityException] {
           asUser("U") { spark.sql(joinSql) }
         }
-        asUser("U") { spark.sql(s"select a from ${t2} where p < 5").cache() }
+        asUser("U") { spark.sql(s"select a from $t2 where p < 5").cache() }
         asUser("super") {
           assert(spark.sql(joinSql).queryExecution.optimizedPlan
             .find(_.isInstanceOf[InMemoryRelation]).isDefined)
@@ -238,7 +253,7 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
         intercept[SecurityException] {
           asUser("U") { spark.sql(joinSql) }
         }
-        asUser("super") { spark.sql(s"grant select on ${t1} to U") }
+        asUser("super") { spark.sql(s"grant select on $t1 to U") }
         asUser("U") { spark.sql(joinSql) }
       }
     }
@@ -315,12 +330,12 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
 
   test("alter table partition") {
     val tableId = TableIdentifier("t1", Some("perm"))
-    val alterAddString = s"alter table ${tableId} add partition (p=10)"
-    val alterDropString = s"alter table ${tableId} drop partition (p=11)"
-    val alterRenameString = s"alter table ${tableId} partition (p=10) " +
+    val alterAddString = s"alter table $tableId add partition (p=10)"
+    val alterDropString = s"alter table $tableId drop partition (p=11)"
+    val alterRenameString = s"alter table $tableId partition (p=10) " +
       s"rename to partition (p=11)"
     val alters = Seq(alterAddString, alterRenameString, alterDropString)
-    withTable(tableId, "super", false) {
+    withTable(tableId, "super", isDataSource = false) {
       asUser("super") { alters.foreach(spark.sql) }
       asUser("U") {
         alters.foreach {alter =>
@@ -330,7 +345,7 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
         }
       }
       asUser("super") {
-        spark.sql(s"grant select on table ${tableId} to U")
+        spark.sql(s"grant select on table $tableId to U")
       }
       asUser("U") {
         alters.foreach {alter =>
@@ -340,7 +355,7 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
         }
       }
       asUser("super") {
-        spark.sql(s"grant modify on table ${tableId} to U")
+        spark.sql(s"grant modify on table $tableId to U")
       }
       asUser("U") { alters.foreach(spark.sql) }
     }
@@ -349,16 +364,16 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
   test("grant/revoke by owner only") {
     val tableId = TableIdentifier("t1", Some("perm"))
     withTable(tableId, "super") {
-      asUser("super") { spark.sql(s"grant select on ${tableId} to U") }
+      asUser("super") { spark.sql(s"grant select on $tableId to U") }
       intercept[SecurityException] {
         asUser("W") {
-          spark.sql(s"grant select on ${tableId} to U")
+          spark.sql(s"grant select on $tableId to U")
         }
       }
-      asUser("super") { spark.sql(s"revoke select on ${tableId} from U") }
+      asUser("super") { spark.sql(s"revoke select on $tableId from U") }
       intercept[SecurityException] {
         asUser("W") {
-          spark.sql(s"revoke select on ${tableId} from U")
+          spark.sql(s"revoke select on $tableId from U")
         }
       }
     }
@@ -369,16 +384,16 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     withTable(tableId, "super") {
       intercept[SecurityException] {
         asUser("U") {
-          spark.sql(s"select * from ${tableId}")
+          spark.sql(s"select * from $tableId")
         }
       }
-      asUser("super") { spark.sql(s"grant select on ${tableId} to U") }
+      asUser("super") { spark.sql(s"grant select on $tableId to U") }
       asUser("U") {
-        spark.sql(s"select * from ${tableId}")
+        spark.sql(s"select * from $tableId")
       }
       intercept[SecurityException] {
         asUser("U") {
-          spark.sql(s"grant select on ${tableId} to W")
+          spark.sql(s"grant select on $tableId to W")
         }
       }
     }
@@ -387,20 +402,20 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
   test("revoke works with or without grant") {
     val tableId = TableIdentifier("t1", Some("perm"))
     withTable(tableId, "super") {
-      asUser("super") { spark.sql(s"revoke select on ${tableId} from U") }
+      asUser("super") { spark.sql(s"revoke select on $tableId from U") }
       intercept[SecurityException] {
         asUser("U") {
-          spark.sql(s"select * from ${tableId}")
+          spark.sql(s"select * from $tableId")
         }
       }
-      asUser("super") { spark.sql(s"grant select on ${tableId} to U") }
+      asUser("super") { spark.sql(s"grant select on $tableId to U") }
       asUser("U") {
-        spark.sql(s"select * from ${tableId}")
+        spark.sql(s"select * from $tableId")
       }
-      asUser("super") { spark.sql(s"revoke select on ${tableId} from U") }
+      asUser("super") { spark.sql(s"revoke select on $tableId from U") }
       intercept[SecurityException] {
         asUser("U") {
-          spark.sql(s"select * from ${tableId}")
+          spark.sql(s"select * from $tableId")
         }
       }
     }
@@ -411,29 +426,29 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     withTable(tableId, "super") {
       intercept[SecurityException] {
         asUser("U") {
-          spark.sql(s"grant select on ${tableId} to W")
+          spark.sql(s"grant select on $tableId to W")
         }
       }
-      asUser("super") { spark.sql(s"grant select on ${tableId} to U with grant option") }
+      asUser("super") { spark.sql(s"grant select on $tableId to U with grant option") }
       asUser("U") {
-        spark.sql(s"select * from ${tableId}")
-        spark.sql(s"grant select on ${tableId} to W")
+        spark.sql(s"select * from $tableId")
+        spark.sql(s"grant select on $tableId to W")
       }
-      asUser("W") { spark.sql(s"select * from ${tableId}") }
+      asUser("W") { spark.sql(s"select * from $tableId") }
       asUser("U") {
         intercept[SecurityException] {
-          spark.sql(s"grant select on ${tableId} to W with grant option")
+          spark.sql(s"grant select on $tableId to W with grant option")
         }
         intercept[SecurityException] {
-          spark.sql(s"grant modify on ${tableId} to W")
+          spark.sql(s"grant modify on $tableId to W")
         }
       }
-      asUser("U") { spark.sql(s"revoke select on ${tableId} from W") }
+      asUser("U") { spark.sql(s"revoke select on $tableId from W") }
       intercept[SecurityException] {
-        asUser("W") { spark.sql(s"select * from ${tableId}") }
+        asUser("W") { spark.sql(s"select * from $tableId") }
       }
       intercept[SecurityException] {
-        asUser("U") { spark.sql(s"revoke grant option for select on ${tableId} from U") }
+        asUser("U") { spark.sql(s"revoke grant option for select on $tableId from U") }
       }
     }
   }
@@ -442,16 +457,16 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     val tableId = TableIdentifier("t1", Some("perm"))
     withTable(tableId, "super") {
       asUser("super") {
-        spark.sql(s"grant select on ${tableId} to U with grant option")
-        spark.sql(s"revoke grant option for select on ${tableId} from U")
+        spark.sql(s"grant select on $tableId to U with grant option")
+        spark.sql(s"revoke grant option for select on $tableId from U")
       }
       intercept[SecurityException] {
         asUser("U") {
-          spark.sql(s"grant select on ${tableId} to W")
+          spark.sql(s"grant select on $tableId to W")
         }
       }
       asUser("U") {
-        spark.sql(s"select * from ${tableId}")
+        spark.sql(s"select * from $tableId")
       }
     }
   }
@@ -460,15 +475,15 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     val tableId = TableIdentifier("t1", Some("perm"))
     withTable(tableId, "super") {
       asUser("super") {
-        spark.sql(s"grant select on ${tableId} to U with grant option")
-        spark.sql(s"revoke select on ${tableId} from U")
+        spark.sql(s"grant select on $tableId to U with grant option")
+        spark.sql(s"revoke select on $tableId from U")
       }
       asUser("U") {
         intercept[SecurityException] {
-          spark.sql(s"grant select on ${tableId} to W")
+          spark.sql(s"grant select on $tableId to W")
         }
         intercept[SecurityException] {
-          spark.sql(s"select * from ${tableId}")
+          spark.sql(s"select * from $tableId")
         }
       }
     }
@@ -540,6 +555,21 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     assertNoOp("drop table if exists perm.tblx")
     assertFail("drop function perm.fnx")
     assertNoOp("drop function if exists perm.fnx")
+  }
+
+  test("SC-5492: drop table using an action") {
+    def showTables(): Seq[Row] = spark.sql("show tables").collect()
+    withDatabase("test_sql_acl_db", "super") {
+      asUser("super") {
+        spark.sql("use test_sql_acl_db")
+        spark.sql("drop table if exists mustdrop").collect()
+        assert(showTables() === Seq())
+        spark.sql("create table mustdrop(id bigint)")
+        assert(showTables() === Seq(Row("test_sql_acl_db", "mustdrop", false)))
+        spark.sql("drop table mustdrop").collect()
+        assert(showTables() === Seq())
+      }
+    }
   }
 
   test("query on file") {
