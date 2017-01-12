@@ -169,6 +169,16 @@ sql_kafka = Module(
     ]
 )
 
+sql_kafka_0_8 = Module(
+    name="sql-kafka-0-8",
+    dependencies=[sql],
+    source_file_regexes=[
+        "external/kafka-0-8-sql",
+    ],
+    sbt_test_goals=[
+        "sql-kafka-0-8/test",
+    ]
+)
 
 sketch = Module(
     name="sketch",
@@ -233,7 +243,7 @@ streaming_kafka = Module(
     name="streaming-kafka-0-8",
     dependencies=[streaming],
     source_file_regexes=[
-        "external/kafka-0-8",
+        "external/kafka-0-8/",
         "external/kafka-0-8-assembly",
     ],
     sbt_test_goals=[
