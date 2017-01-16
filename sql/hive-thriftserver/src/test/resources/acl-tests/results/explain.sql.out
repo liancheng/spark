@@ -80,7 +80,7 @@ usr1
 -- !query 7 schema
 struct<>
 -- !query 7 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission READ_METADATA on function `perm`.`fn1`
 
 
 -- !query 8
@@ -90,7 +90,7 @@ usr1
 -- !query 8 schema
 struct<>
 -- !query 8 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission READ_METADATA on function `perm`.`fn1`
 
 
 -- !query 9
@@ -100,7 +100,7 @@ usr1
 -- !query 9 schema
 struct<>
 -- !query 9 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission READ_METADATA on table `perm`.`vw1`
 
 
 -- !query 10
@@ -182,7 +182,7 @@ usr1
 -- !query 16 schema
 struct<>
 -- !query 16 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission READ_METADATA on function `perm`.`fn1`
 
 
 -- !query 17
@@ -192,7 +192,7 @@ usr1
 -- !query 17 schema
 struct<>
 -- !query 17 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission SELECT on function `perm`.`fn1`
 
 
 -- !query 18
@@ -202,7 +202,7 @@ usr1
 -- !query 18 schema
 struct<>
 -- !query 18 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission READ_METADATA on function `perm`.`fn1`
 
 
 -- !query 19

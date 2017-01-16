@@ -48,7 +48,7 @@ usr1
 -- !query 3 schema
 struct<>
 -- !query 3 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission SELECT on table `db1`.`vw1`
 
 
 -- !query 4
@@ -147,7 +147,7 @@ usr1
 -- !query 12 schema
 struct<>
 -- !query 12 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission READ_METADATA on database `db1`
 
 
 -- !query 13
@@ -157,7 +157,7 @@ usr1
 -- !query 13 schema
 struct<>
 -- !query 13 output
-java.lang.SecurityException: Principal is not authorized to execute the given query
+java.lang.SecurityException: User does not have permission SELECT on table `db1`.`vw1`
 
 
 -- !query 14

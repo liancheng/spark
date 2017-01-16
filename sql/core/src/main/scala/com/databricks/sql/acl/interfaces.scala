@@ -55,6 +55,7 @@ sealed trait Securable {
   val name: String
   val key: AnyRef
   def typeName: String = getClass.getSimpleName.toUpperCase
+  def prettyString: String
 }
 
 object Securable {
@@ -159,6 +160,7 @@ object Securable {
 case object Catalog extends Securable {
   override val key: Option[Nothing] = None
   override val name: String = "/CATALOG/`default`"
+  override def prettyString: String = "CATALOG"
 }
 
 case class Database(key: String) extends Securable {
@@ -167,6 +169,7 @@ case class Database(key: String) extends Securable {
     val name = Securable.addBackticks(key)
     s"${Catalog.name}/DATABASE/$name"
   }
+  override def prettyString: String = s"database ${Securable.addBackticks(key)}"
 }
 
 sealed trait DatabaseSecurable extends Securable {
@@ -181,6 +184,7 @@ sealed trait DatabaseSecurable extends Securable {
 
 case class Table(key: TableIdentifier) extends DatabaseSecurable {
   assert(key != null)
+  override def prettyString: String = s"table ${key.quotedString}"
 }
 
 object Table {
@@ -192,6 +196,7 @@ sealed trait SecurableFunction extends Securable
 
 case class Function(key: FunctionIdentifier) extends DatabaseSecurable with SecurableFunction {
   assert(key != null)
+  override def prettyString: String = s"function ${key.quotedString}"
 }
 
 object Function {
@@ -203,12 +208,14 @@ case object AnonymousFunction extends SecurableFunction {
   override val key: Option[Nothing] = None
   override def typeName: String = "ANONYMOUS_FUNCTION"
   override val name: String = "/" + typeName
+  override def prettyString: String = s"anonymous function"
 }
 
 case object AnyFile extends Securable {
   override val key: Option[Nothing] = None
   override def typeName: String = "ANY_FILE"
   override val name: String = "/" + typeName
+  override def prettyString: String = s"any file"
 }
 
 /**

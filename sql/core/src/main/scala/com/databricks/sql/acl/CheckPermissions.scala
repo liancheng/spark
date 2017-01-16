@@ -32,8 +32,10 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
   val permissionChecker = new PermissionChecker(aclClient)
 
   def apply(plan: LogicalPlan): Unit = {
-    if (!getRequestsToCheck(plan).forall(permissionChecker)) {
-      throw new SecurityException("Principal is not authorized to execute the given query")
+    getRequestsToCheck(plan).foreach { request =>
+      if (!permissionChecker(request)) {
+        throw new SecurityException(toErrorMessageForFailedRequest(request))
+      }
     }
   }
 
@@ -360,5 +362,14 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
       case Request(securable, _, children) if securable != AnonymousFunction =>
         Request(securable, ReadMetadata, toExplainRequests(children.toSeq).toSet)
     }
+  }
+
+  private def toErrorMessageForFailedRequest(request: Request): String = {
+    val actionString = request.action match {
+      case Own => "own"
+      case _ => s"have permission ${request.action} on"
+    }
+
+    s"User does not ${actionString} ${request.securable.prettyString}"
   }
 }

@@ -45,7 +45,7 @@ import org.apache.spark.sql.jdbc.JdbcDialects
  *
  * To re-generate golden files, run:
  * {{{
- *   SPARK_GENERATE_GOLDEN_FILES=1 build/sbt -Phive -Phive-thriftserver "thriftserver/test-only *ThriftEndToEndAclTestSuite"
+ *   SPARK_GENERATE_GOLDEN_FILES=1 build/sbt -Phive -Phive-thriftserver "hive-thriftserver/test-only *ThriftEndToEndAclTestSuite"
  * }}}
  *
  * The format for input files is simple:
