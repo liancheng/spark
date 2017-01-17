@@ -14,6 +14,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * Copyright (C) 2016 Databricks, Inc.
+ *
+ * Portions of this software incorporate or are derived from software contained within Apache Spark,
+ * and this modified software differs from the Apache Spark software provided under the Apache
+ * License, Version 2.0, a copy of which you may obtain at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ */
 
 package org.apache.spark.sql.kafka08
 
@@ -438,6 +446,26 @@ class KafkaSourceSuite extends KafkaSourceTest {
       row.getAs[Int]("timestampType") === KafkaSourceRDD.NO_TIMESTAMP_TYPE,
       s"Unexpected results: $row")
     query.stop()
+  }
+
+  test("unsupported options") {
+    def testUnsupportedOption(key: String, value: String = "someValue"): Unit = {
+      val ex = intercept[IllegalArgumentException] {
+        val reader = spark
+          .readStream
+          .format("kafka08")
+          .option("subscribe", "topic")
+          .option("kafka.bootstrap.servers", "somehost")
+          .option(key, value)
+        reader.load()
+      }
+      for (msg <- Seq("0.8", "not supported", key)) {
+        assert(ex.getMessage.contains(msg))
+      }
+    }
+
+    testUnsupportedOption("subscribePattern")
+    testUnsupportedOption("failOnDataLoss")
   }
 
   private def testFromLatestOffsets(

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 /*
- * Copyright © 2016 Databricks, Inc.
+ * Copyright (C) 2016 Databricks, Inc.
  *
  * Portions of this software incorporate or are derived from software contained within Apache Spark,
  * and this modified software differs from the Apache Spark software provided under the Apache
@@ -150,6 +150,13 @@ private[kafka08] class KafkaSourceProvider extends StreamSourceProvider
         s"Option 'kafka.bootstrap.servers' must be specified for " +
           s"configuring Kafka consumer")
     }
+
+    for (unsupportedOption <- UNSUPPORTED_OPTIONS) {
+      if (caseInsensitiveParams.contains(unsupportedOption.toLowerCase)) {
+        throw new IllegalArgumentException(
+          s"'$unsupportedOption' is not supported in Kafka 0.8 source")
+      }
+    }
   }
 
   override def shortName: String = "kafka08"
@@ -158,4 +165,5 @@ private[kafka08] class KafkaSourceProvider extends StreamSourceProvider
 private[kafka08] object KafkaSourceProvider {
   private val STRATEGY_OPTION_KEYS = Set("subscribe", "assign")
   private val STARTING_OFFSETS_OPTION_KEY = "startingoffsets"
+  private val UNSUPPORTED_OPTIONS = Set("subscribePattern", "failOnDataLoss")
 }
