@@ -17,8 +17,8 @@
 
 package org.apache.spark
 
-import org.scalatest.{Ignore, Matchers}
 import org.scalatest.concurrent.Timeouts._
+import org.scalatest.Matchers
 import org.scalatest.time.{Millis, Span}
 
 import org.apache.spark.storage.{RDDBlockId, StorageLevel}
@@ -27,7 +27,7 @@ import org.apache.spark.util.io.ChunkedByteBuffer
 class NotSerializableClass
 class NotSerializableExn(val notSer: NotSerializableClass) extends Throwable() {}
 
-@Ignore
+
 class DistributedSuite extends SparkFunSuite with Matchers with LocalSparkContext {
 
   val clusterUrl = "local-cluster[2,1,1024]"

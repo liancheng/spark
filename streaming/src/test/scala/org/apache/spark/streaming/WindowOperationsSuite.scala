@@ -17,12 +17,9 @@
 
 package org.apache.spark.streaming
 
-import org.scalatest.Ignore
-
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream.DStream
 
-@Ignore
 class WindowOperationsSuite extends TestSuiteBase {
 
   override def maxWaitTimeMillis: Int = 20000  // large window tests can sometimes take longer

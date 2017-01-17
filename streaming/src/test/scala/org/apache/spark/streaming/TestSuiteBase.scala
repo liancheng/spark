@@ -29,7 +29,7 @@ import org.scalatest.concurrent.Eventually.timeout
 import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.time.{Seconds => ScalaTestSeconds, Span}
 
-import org.apache.spark.{SparkConf, SparkContext, SparkFunSuite}
+import org.apache.spark.{SparkConf, SparkFunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.dstream.{DStream, ForEachDStream, InputDStream}
@@ -248,11 +248,6 @@ trait TestSuiteBase extends SparkFunSuite with BeforeAndAfter with Logging {
 
   // Timeout for use in ScalaTest `eventually` blocks
   val eventuallyTimeout: PatienceConfiguration.Timeout = timeout(Span(10, ScalaTestSeconds))
-
-  // Make sure that there is no spark context active.
-  override protected def beforeAll(): Unit = {
-    SparkContext.getOrCreate(conf).stop()
-  }
 
   // Default before function for any streaming test suite. Override this
   // if you want to add your stuff to "before" (i.e., don't call before { } )

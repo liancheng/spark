@@ -17,14 +17,12 @@
 
 package org.apache.spark.streaming.scheduler
 
-import org.scalatest.Ignore
 import org.scalatest.concurrent.Eventually._
 import org.scalatest.time.SpanSugar._
 
 import org.apache.spark.streaming._
 import org.apache.spark.streaming.scheduler.rate.RateEstimator
 
-@Ignore
 class RateControllerSuite extends TestSuiteBase {
 
   override def useManualClock: Boolean = false
