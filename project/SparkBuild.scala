@@ -39,8 +39,9 @@ object BuildCommons {
 
   private val buildLocation = file(".").getAbsoluteFile.getParentFile
 
-  val sqlProjects@Seq(catalyst, sql, hive, hiveThriftServer, sqlKafka010, sqlKafka08, avro) = Seq(
-    "catalyst", "sql", "hive", "hive-thriftserver", "sql-kafka-0-10", "sql-kafka-0-8", "avro"
+  val sqlProjects@Seq(catalyst, sql, hive, hiveThriftServer, sqlKafka010, sqlKafka08, avro, redshift, redshiftIntegrationTests) = Seq(
+    "catalyst", "sql", "hive", "hive-thriftserver", "sql-kafka-0-10", "sql-kafka-0-8", "avro",
+    "redshift", "redshift-integration-tests"
   ).map(ProjectRef(buildLocation, _))
 
   val streamingProjects@Seq(
@@ -353,7 +354,7 @@ object SparkBuild extends PomBuild {
   val mimaProjects = allProjects.filterNot { x =>
     Seq(
       spark, hive, hiveThriftServer, catalyst, repl, networkCommon, networkShuffle, networkYarn,
-      unsafe, tags, sqlKafka010, sqlKafka08, avro
+      unsafe, tags, sqlKafka010, sqlKafka08, avro, redshift, redshiftIntegrationTests
     ).contains(x)
   }
 
@@ -717,9 +718,9 @@ object Unidoc {
     publish := {},
 
     unidocProjectFilter in(ScalaUnidoc, unidoc) :=
-      inAnyProject -- inProjects(OldDeps.project, repl, examples, tools, streamingFlumeSink, yarn, tags, streamingKafka010, sqlKafka010, sqlKafka08, avro),
+      inAnyProject -- inProjects(OldDeps.project, repl, examples, tools, streamingFlumeSink, yarn, tags, streamingKafka010, sqlKafka010, sqlKafka08, avro, redshift),
     unidocProjectFilter in(JavaUnidoc, unidoc) :=
-      inAnyProject -- inProjects(OldDeps.project, repl, examples, tools, streamingFlumeSink, yarn, tags, streamingKafka010, sqlKafka010, sqlKafka08, avro),
+      inAnyProject -- inProjects(OldDeps.project, repl, examples, tools, streamingFlumeSink, yarn, tags, streamingKafka010, sqlKafka010, sqlKafka08, avro, redshift),
 
     unidocAllClasspaths in (ScalaUnidoc, unidoc) := {
       ignoreClasspaths((unidocAllClasspaths in (ScalaUnidoc, unidoc)).value)

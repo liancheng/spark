@@ -111,7 +111,8 @@ def determine_modules_to_test(changed_modules):
     >>> x = [x.name for x in determine_modules_to_test([modules.sql])]
     >>> x # doctest: +NORMALIZE_WHITESPACE
     ['sql', 'avro', 'hive', 'mllib', 'sql-kafka-0-10', 'sql-kafka-0-8', 'examples',
-     'hive-thriftserver', 'pyspark-sql', 'sparkr', 'pyspark-mllib', 'pyspark-ml']
+     'hive-thriftserver', 'pyspark-sql', 'redshift', 'sparkr', 'pyspark-mllib',
+     'redshift-integration-tests', 'pyspark-ml']
     """
     modules_to_test = set()
     for module in changed_modules:
@@ -512,6 +513,8 @@ def main():
         test_env = "amplab_jenkins"
         # add path for Python3 in Jenkins if we're calling from a Jenkins machine
         os.environ["PATH"] = "/home/anaconda/envs/py3k/bin:" + os.environ.get("PATH")
+        # Install Redshift JDBC
+        run_cmd([os.path.join(SPARK_HOME, "dev", "install-redshift-jdbc.sh")])
     else:
         # else we're running locally and can use local settings
         build_tool = "sbt"

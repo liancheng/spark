@@ -1,0 +1,22 @@
+<!--
+/*
+ * Copyright (C) 2016 Databricks, Inc.
+ *
+ * Portions of this software incorporate or are derived from software contained within Apache Spark,
+ * and this modified software differs from the Apache Spark software provided under the Apache
+ * License, Version 2.0, a copy of which you may obtain at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ */
+  -->
+
+<!-- The following is copied from https://issues.apache.org/jira/browse/HIVE-6962 -->
+
+<configuration>
+  <property>
+    <name>fs.permissions.umask-mode</name>
+    <value>022</value>
+    <description> Setting a value for fs.permissions.umask-mode to work around issue in HIVE-6962.
+      It has no impact in Hadoop 1.x line on HDFS operations.
+    </description>
+  </property>
+</configuration>

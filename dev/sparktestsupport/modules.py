@@ -168,6 +168,31 @@ avro = Module(
     ]
 )
 
+redshift = Module(
+    name="redshift",
+    dependencies=[avro, sql],
+    source_file_regexes=[
+        "external/redshift",
+    ],
+    sbt_test_goals=[
+        "redshift/test",
+    ],
+    test_tags=[
+        "org.apache.spark.tags.ExtendedRedshiftTest"
+    ],
+)
+
+redshift_integration_tests = Module(
+    name="redshift-integration-tests",
+    dependencies=[redshift],
+    source_file_regexes=[
+        "external/redshift-integration-tests",
+    ],
+    sbt_test_goals=[
+        "redshift-integration-tests/test",
+    ],
+)
+
 sql_kafka = Module(
     name="sql-kafka-0-10",
     dependencies=[sql],
