@@ -30,6 +30,7 @@ import org.apache.spark.metrics.source.HiveCatalogMetrics
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{expressions, InternalRow}
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.transaction._
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.util.SerializableConfiguration
 
@@ -391,7 +392,10 @@ object PartitioningAwareFileIndex extends Logging {
       // [SPARK-17599] Prevent InMemoryFileIndex from failing if path doesn't exist
       // Note that statuses only include FileStatus for the files and dirs directly under path,
       // and does not include anything else recursively.
-      val statuses = try fs.listStatus(path) catch {
+      val statuses = try {
+        // This is a hack to inject a filesystem for testing purposes.
+        DatabricksAtomicReadProtocol.testingFs.getOrElse(fs).listStatus(path)
+      } catch {
         case _: FileNotFoundException =>
           logWarning(s"The directory $path was not found. Was it deleted very recently?")
           Array.empty[FileStatus]
@@ -405,7 +409,8 @@ object PartitioningAwareFileIndex extends Logging {
           case _ =>
             dirs.flatMap(dir => listLeafFiles(dir.getPath, hadoopConf, filter, sessionOpt))
         }
-        val allFiles = topLevelFiles ++ nestedFiles
+        val allFiles = DatabricksAtomicReadProtocol.filterDirectoryListing(
+          fs, path, topLevelFiles) ++ nestedFiles
         if (filter != null) allFiles.filter(f => filter.accept(f.getPath)) else allFiles
       }
 

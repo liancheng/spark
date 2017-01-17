@@ -150,6 +150,7 @@ statement
     | SET ROLE .*?                                                     #failNativeCommand
     | SET .*?                                                          #setConfiguration
     | RESET                                                            #resetConfiguration
+    | VACUUM path=STRING (RETAIN number HOURS)?                        #vacuumPath
     | unsupportedHiveNativeCommands .*?                                #failNativeCommand
     ;
 
@@ -701,6 +702,7 @@ nonReserved
     | AND | CASE | CAST | DISTINCT | DIV | ELSE | END | FUNCTION | INTERVAL | MACRO | OR | STRATIFY | THEN
     | UNBOUNDED | WHEN
     | DATABASE | SELECT | FROM | WHERE | HAVING | TO | TABLE | WITH | NOT | CURRENT_DATE | CURRENT_TIMESTAMP
+    | VACUUM | RETAIN | HOURS
     ;
 
 SELECT: 'SELECT';
@@ -810,6 +812,9 @@ START: 'START';
 TRANSACTION: 'TRANSACTION';
 COMMIT: 'COMMIT';
 ROLLBACK: 'ROLLBACK';
+VACUUM: 'VACUUM';
+RETAIN: 'RETAIN';
+HOURS: 'HOURS';
 MACRO: 'MACRO';
 
 IF: 'IF';
