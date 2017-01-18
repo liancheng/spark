@@ -8,7 +8,7 @@
 
 package org.apache.spark.sql.transaction
 
-import java.io._
+import java.io.{File, InputStream, InputStreamReader, IOException, OutputStream}
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable

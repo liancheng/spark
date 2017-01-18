@@ -30,7 +30,7 @@ class InMemoryAclClient(var underlyingPrincipal: Principal) extends AclClient {
       principal: Option[Principal] = None,
       securable: Securable): Seq[Permission] = {
     allPermissions.filter { perm =>
-      (principal.isEmpty || principal.contains(perm.principal)) && (securable == perm.securable)
+      (principal.isEmpty || principal == Some(perm.principal)) && (securable == perm.securable)
     }.toSeq
   }
 

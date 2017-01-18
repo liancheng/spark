@@ -402,7 +402,8 @@ object PartitioningAwareFileIndex extends Logging {
       }
 
       val allLeafStatuses = {
-        val (dirs, topLevelFiles) = statuses.partition(_.isDirectory)
+        val (dirs: Array[FileStatus], topLevelFiles: Array[FileStatus]) =
+          statuses.partition(_.isDirectory)
         val nestedFiles: Seq[FileStatus] = sessionOpt match {
           case Some(session) =>
             bulkListLeafFiles(dirs.map(_.getPath), hadoopConf, filter, session).flatMap(_._2)
