@@ -17,6 +17,7 @@ import scala.collection.JavaConverters._
 import com.amazonaws.auth.AWSCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3Client
 import com.databricks.spark.redshift.Parameters.MergedParameters
+import com.databricks.spark.redshift.Utils.escapeJdbcString
 import com.eclipsesource.json.Json
 import org.slf4j.LoggerFactory
 
@@ -178,8 +179,8 @@ private[redshift] case class RedshiftRelation(
     val query = {
       // Since the query passed to UNLOAD will be enclosed in single quotes, we need to escape
       // any backslashes and single quotes that appear in the query itself
-      val escapedTableNameOrSubqury = tableNameOrSubquery.replace("\\", "\\\\").replace("'", "\\'")
-      s"SELECT $columnList FROM $escapedTableNameOrSubqury $whereClause"
+      s"SELECT $columnList FROM ${escapeJdbcString(tableNameOrSubquery)} " +
+        s"${escapeJdbcString(whereClause)}"
     }
     // We need to remove S3 credentials from the unload path URI because they will conflict with
     // the credentials passed via `credsString`.

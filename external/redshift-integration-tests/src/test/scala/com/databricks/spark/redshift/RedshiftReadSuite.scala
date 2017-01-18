@@ -110,7 +110,7 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
   test("Can load output of Redshift aggregation queries") {
     checkAnswer(
       read.option("query", s"select testbool, count(*) from $test_table group by testbool").load(),
-      Seq(Row(true, 1), Row(false, 2), Row(null, 2)))
+      Seq(Row(true, 1), Row(false, 2), Row(null, 3)))
   }
 
   test("multiple scans on same table") {
@@ -128,6 +128,7 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
     checkAnswer(
       sqlContext.sql("select testbyte, testbool from test_table"),
       Seq(
+        Row(null, null),
         Row(null, null),
         Row(0.toByte, null),
         Row(0.toByte, false),
@@ -239,5 +240,73 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
       .option("query", s"select approximate count(distinct testbool) as c from $test_table")
       .load()
     assert(df.schema.fields(0).dataType === LongType)
+  }
+
+  test("properly escape literals in filter pushdown (SC-5504)") {
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where testint = 4141214"),
+      Seq(Row(1))
+    )
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where testint = 7"),
+      Seq(Row(0))
+    )
+    checkAnswer(
+      sqlContext.sql("select testint from test_table where testint = 42"),
+      Seq(Row(42), Row(42))
+    )
+
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where teststring = 'asdf'"),
+      Seq(Row(1))
+    )
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where teststring = 'alamakota'"),
+      Seq(Row(0))
+    )
+    checkAnswer(
+      sqlContext.sql("select teststring from test_table where teststring = 'asdf'"),
+      Seq(Row("asdf"))
+    )
+
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where teststring = 'a\\'b'"),
+      Seq(Row(0))
+    )
+    checkAnswer(
+      sqlContext.sql("select teststring from test_table where teststring = 'a\\'b'"),
+      Seq()
+    )
+
+    // scalastyle:off
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where teststring = 'Unicode\\'s樂趣'"),
+      Seq(Row(1))
+    )
+    checkAnswer(
+      sqlContext.sql("select teststring from test_table where teststring = \"Unicode's樂趣\""),
+      Seq(Row("Unicode's樂趣"))
+    )
+    // scalastyle:on
+
+    checkAnswer(
+      sqlContext.sql("select count(1) from test_table where teststring = 'a\\\\b'"),
+      Seq(Row(0))
+    )
+    checkAnswer(
+      sqlContext.sql("select teststring from test_table where teststring = 'a\\\\b'"),
+      Seq()
+    )
+
+    checkAnswer(
+      sqlContext.sql(
+        "select count(1) from test_table where teststring = 'Ba\\\\ckslash\\\\'"),
+      Seq(Row(1))
+    )
+    checkAnswer(
+      sqlContext.sql(
+        "select teststring from test_table where teststring = \"Ba\\\\ckslash\\\\\""),
+      Seq(Row("Ba\\ckslash\\"))
+    )
   }
 }

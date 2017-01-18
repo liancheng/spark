@@ -197,4 +197,11 @@ private[redshift] object Utils {
       case _ => None
     }
   }
+
+  /**
+   * Escapes a string, so that it can be passed as a JDBC string literal.
+   */
+  def escapeJdbcString(s: String): String = {
+    s.replace("\\", "\\\\").replace("'", "\\'")
+  }
 }
