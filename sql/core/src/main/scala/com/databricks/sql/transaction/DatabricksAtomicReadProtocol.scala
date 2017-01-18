@@ -51,7 +51,7 @@ object DatabricksAtomicReadProtocol extends Logging {
   def filterDirectoryListing(
       fs: FileSystem, dir: Path, initialFiles: Seq[FileStatus]): Seq[FileStatus] = {
     // we use SparkEnv for this escape-hatch flag since this may be called on executors
-    if (!SparkEnv.get.conf.getBoolean("com.databricks.sql.enableFilterUncommitted", true)) {
+    if (!SparkEnv.get.conf.getBoolean("spark.databricks.sql.enableFilterUncommitted", true)) {
       return initialFiles
     }
 
@@ -151,7 +151,7 @@ object DatabricksAtomicReadProtocol extends Logging {
 
     // Optimization: can assume the list request was atomic if the files have not changed recently.
     val horizonMillis = SparkEnv.get.conf.getLong(
-      "com.databricks.sql.writeReorderingHorizonMillis", 5 * 60 * 1000)
+      "spark.databricks.sql.writeReorderingHorizonMillis", 5 * 60 * 1000)
 
     if ((state.missingMarkers.nonEmpty || state.missingDataFiles.nonEmpty) &&
           state.lastModified > clock.getTimeMillis - horizonMillis) {
@@ -235,7 +235,7 @@ object DatabricksAtomicReadProtocol extends Logging {
             case NonFatal(e) =>
               // we use SparkEnv for this escape-hatch flag since this may be called on executors
               if (SparkEnv.get.conf.getBoolean(
-                  "com.databricks.sql.ignoreCorruptCommitMarkers", false)) {
+                  "spark.databricks.sql.ignoreCorruptCommitMarkers", false)) {
                 logWarning("Failed to read job commit marker: " + stat, e)
                 corruptCommitMarkers += txnId
               } else {

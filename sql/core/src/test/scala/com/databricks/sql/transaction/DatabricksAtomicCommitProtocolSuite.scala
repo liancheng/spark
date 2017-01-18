@@ -37,11 +37,11 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       create(dir, "part-r-00001-tid-77777-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv")
       create(dir, "part-r-00001-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv")
       try {
-        SparkEnv.get.conf.set("com.databricks.sql.enableFilterUncommitted", "false")
+        SparkEnv.get.conf.set("spark.databricks.sql.enableFilterUncommitted", "false")
         assert(spark.read.csv(dir.getAbsolutePath).count == 2)
         assert(spark.read.csv(dir.getAbsolutePath).inputFiles.length == 2)
       } finally {
-        SparkEnv.get.conf.remove("com.databricks.sql.enableFilterUncommitted")
+        SparkEnv.get.conf.remove("spark.databricks.sql.enableFilterUncommitted")
       }
     }
   }
@@ -171,10 +171,10 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       }
       assert(error.getMessage.contains("Failed to read job commit marker"))
       try {
-        SparkEnv.get.conf.set("com.databricks.sql.ignoreCorruptCommitMarkers", "true")
+        SparkEnv.get.conf.set("spark.databricks.sql.ignoreCorruptCommitMarkers", "true")
         assert(spark.read.csv(dir.getAbsolutePath).count == 1)
       } finally {
-        SparkEnv.get.conf.remove("com.databricks.sql.ignoreCorruptCommitMarkers")
+        SparkEnv.get.conf.remove("spark.databricks.sql.ignoreCorruptCommitMarkers")
       }
     }
   }
