@@ -9,16 +9,15 @@
 
 package com.databricks.spark.redshift
 
-import java.io.InputStreamReader
 import java.net.URI
-
-import scala.collection.JavaConverters._
 
 import com.amazonaws.auth.AWSCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3Client
 import com.databricks.spark.redshift.Parameters.MergedParameters
 import com.databricks.spark.redshift.Utils.escapeJdbcString
-import com.eclipsesource.json.Json
+import org.json4s.{DefaultFormats, JValue, StreamInput}
+import org.json4s.JsonAST.JValue
+import org.json4s.jackson.JsonMethods
 import org.slf4j.LoggerFactory
 
 import org.apache.spark.rdd.RDD
@@ -139,9 +138,11 @@ private[redshift] case class RedshiftRelation(
         val s3URI = Utils.createS3URI(cleanedTempDirUri)
         val s3Client = s3ClientFactory(creds)
         val is = s3Client.getObject(s3URI.getBucket, s3URI.getKey + "manifest").getObjectContent
-        val s3Files = try {
-          val entries = Json.parse(new InputStreamReader(is)).asObject().get("entries").asArray()
-          entries.iterator().asScala.map(_.asObject().get("url").asString()).toSeq
+        val s3Files: Seq[String] = try {
+          implicit val format = DefaultFormats
+          val json: JValue = JsonMethods.parse(StreamInput(is))
+          val entries = (json \ "entries").extract[Array[JValue]]
+          entries.map(e => (e \ "url").extract[String])
         } finally {
           is.close()
         }
