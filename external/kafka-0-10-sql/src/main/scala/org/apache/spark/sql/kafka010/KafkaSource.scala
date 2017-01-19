@@ -123,8 +123,8 @@ private[kafka010] class KafkaSource(
    * Number of partitions to read from Kafka. If this value is greater than the number of Kafka
    * topicPartitions, we will not use the CachedConsumer.
    */
-  private val minNumParitions =
-    sourceOptions.getOrElse("minNumParitions", "0").toInt
+  private val minPartitions =
+    sourceOptions.getOrElse("minPartitions", "0").toInt
 
   /**
    * A KafkaConsumer used in the driver to query the latest Kafka offsets. This only queries the
@@ -381,7 +381,7 @@ private[kafka010] class KafkaSource(
    * the executors.
    */
   private def canReuseCachedConsumers(numTopicPartitions: Int): Boolean = {
-    math.max(minNumParitions, numTopicPartitions) == numTopicPartitions
+    math.max(minPartitions, numTopicPartitions) == numTopicPartitions
   }
 
   /**
@@ -398,7 +398,7 @@ private[kafka010] class KafkaSource(
       fromPartitionOffsets: Map[TopicPartition, Long],
       newPartitionOffsets: Map[TopicPartition, Long],
       untilPartitionOffsets: Map[TopicPartition, Long]): Seq[KafkaSourceRDDOffsetRange] = {
-    val numPartitionsToRead = math.max(minNumParitions, topicPartitions.length)
+    val numPartitionsToRead = math.max(minPartitions, topicPartitions.length)
 
     val offsets = topicPartitions.flatMap { tp =>
       val fromOffset = fromPartitionOffsets.get(tp).getOrElse {

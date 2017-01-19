@@ -487,7 +487,7 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
   }
 
   test("getOffsetRanges: 1-many mapping of TopicPartition to Spark partition") {
-    withKafkaSource(Map("minNumParitions" -> "4")) { source =>
+    withKafkaSource(Map("minPartitions" -> "4")) { source =>
       val tp = new TopicPartition("some-topic", 1)
       val from = Map(tp -> 1L)
       val until = Map(tp -> 5L)
@@ -501,7 +501,7 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
   }
 
   test("getOffsetRanges: 1-many mapping handling skewed partitions") {
-    withKafkaSource(Map("minNumParitions" -> "4")) { source =>
+    withKafkaSource(Map("minPartitions" -> "4")) { source =>
       val tp1 = new TopicPartition("some-topic", 1)
       val tp2 = new TopicPartition("some-topic", 2)
       val from = Map(tp1 -> 1L, tp2 -> 1L)
@@ -519,7 +519,7 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
   }
 
   test("getOffsetRanges: 1-many mapping handling partitions with no new data") {
-    withKafkaSource(Map("minNumParitions" -> "4")) { source =>
+    withKafkaSource(Map("minPartitions" -> "4")) { source =>
       val tp1 = new TopicPartition("some-topic", 1)
       val tp2 = new TopicPartition("some-topic", 2)
       val from = Map(tp1 -> 1L, tp2 -> 1L)
@@ -538,7 +538,7 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
   }
 
   test("getOffsetRanges: 1-many mapping handling very skewed partitions") {
-    withKafkaSource(Map("minNumParitions" -> "3")) { source =>
+    withKafkaSource(Map("minPartitions" -> "3")) { source =>
       val tp1 = new TopicPartition("some-topic", 1)
       val tp2 = new TopicPartition("some-topic", 2)
       // make sure that tp1 is not ignored
@@ -557,7 +557,7 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
   }
 
   test("getOffsetRanges: number of partitions being less than topic partitions") {
-    withKafkaSource(Map("minNumParitions" -> "1")) { source =>
+    withKafkaSource(Map("minPartitions" -> "1")) { source =>
       val tp1 = new TopicPartition("some-topic", 1)
       val tp2 = new TopicPartition("some-topic", 2)
       val from = Map(tp1 -> 1L, tp2 -> 1L)
@@ -577,14 +577,14 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
     withKafkaSource() { source =>
       assert(source.invokePrivate(canReuse(4)))
     }
-    withKafkaSource(Map("minNumParitions" -> "1")) { source =>
+    withKafkaSource(Map("minPartitions" -> "1")) { source =>
       assert(source.invokePrivate(canReuse(4)))
     }
-    withKafkaSource(Map("minNumParitions" -> "4")) { source =>
+    withKafkaSource(Map("minPartitions" -> "4")) { source =>
       assert(source.invokePrivate(canReuse(4)),
         "Can re-use because there is a 1-1 mapping of Spark partitions to Kafka")
     }
-    withKafkaSource(Map("minNumParitions" -> "8")) { source =>
+    withKafkaSource(Map("minPartitions" -> "8")) { source =>
       assert(!source.invokePrivate(canReuse(4)),
         "Can't re-use because there are more Spark partitions than Kafka")
     }
