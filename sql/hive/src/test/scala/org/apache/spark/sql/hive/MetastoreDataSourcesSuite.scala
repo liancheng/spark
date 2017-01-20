@@ -421,7 +421,7 @@ class MetastoreDataSourcesSuite extends QueryTest with SQLTestUtils with TestHiv
       val e = intercept[AnalysisException] {
         df.write.mode(SaveMode.Append).saveAsTable(tableName)
       }.getMessage
-      assert(e.contains("Saving data in the Hive serde table `default`.`tab1` is not supported " +
+      assert(e.contains("Saving data in the Hive serde table default.tab1 is not supported " +
         "yet. Please use the insertInto() API as an alternative."))
 
       df.write.insertInto(tableName)
@@ -927,9 +927,8 @@ class MetastoreDataSourcesSuite extends QueryTest with SQLTestUtils with TestHiv
         createDF(10, 19).write.mode(SaveMode.Append).format("orc").saveAsTable("appendOrcToParquet")
       }
       assert(e.getMessage.contains(
-        "The file format of the existing table default.appendOrcToParquet " +
-        "is `org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat`. " +
-        "It doesn't match the specified format `orc`"))
+        "The format of the existing table default.appendOrcToParquet is `ParquetFileFormat`. " +
+          "It doesn't match the specified format `OrcFileFormat`"))
     }
 
     withTable("appendParquetToJson") {
@@ -939,9 +938,8 @@ class MetastoreDataSourcesSuite extends QueryTest with SQLTestUtils with TestHiv
           .saveAsTable("appendParquetToJson")
       }
       assert(e.getMessage.contains(
-        "The file format of the existing table default.appendParquetToJson " +
-        "is `org.apache.spark.sql.execution.datasources.json.JsonFileFormat`. " +
-        "It doesn't match the specified format `parquet`"))
+        "The format of the existing table default.appendParquetToJson is `JsonFileFormat`. " +
+        "It doesn't match the specified format `ParquetFileFormat`"))
     }
 
     withTable("appendTextToJson") {
@@ -951,9 +949,8 @@ class MetastoreDataSourcesSuite extends QueryTest with SQLTestUtils with TestHiv
           .saveAsTable("appendTextToJson")
       }
       assert(e.getMessage.contains(
-        "The file format of the existing table default.appendTextToJson is " +
-        "`org.apache.spark.sql.execution.datasources.json.JsonFileFormat`. " +
-        "It doesn't match the specified format `text`"))
+        "The format of the existing table default.appendTextToJson is `JsonFileFormat`. " +
+        "It doesn't match the specified format `TextFileFormat`"))
     }
   }
 
