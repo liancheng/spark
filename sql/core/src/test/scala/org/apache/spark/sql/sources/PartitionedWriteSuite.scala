@@ -20,7 +20,9 @@ package org.apache.spark.sql.sources
 import java.io.File
 
 import org.apache.spark.sql.{QueryTest, Row}
+import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.SharedSQLContext
 import org.apache.spark.util.Utils
 
@@ -65,18 +67,21 @@ class PartitionedWriteSuite extends QueryTest with SharedSQLContext {
   }
 
   test("maxRecordsPerFile setting in non-partitioned write path") {
-    withTempDir { f =>
-      spark.range(start = 0, end = 4, step = 1, numPartitions = 1)
-        .write.option("maxRecordsPerFile", 1).mode("overwrite").parquet(f.getAbsolutePath)
-      assert(recursiveList(f).count(_.getAbsolutePath.endsWith("parquet")) == 4)
+    withSQLConf(SQLConf.FILE_COMMIT_PROTOCOL_CLASS.key ->
+        classOf[SQLHadoopMapReduceCommitProtocol].getCanonicalName) {
+      withTempDir { f =>
+        spark.range(start = 0, end = 4, step = 1, numPartitions = 1)
+          .write.option("maxRecordsPerFile", 1).mode("overwrite").parquet(f.getAbsolutePath)
+        assert(recursiveList(f).count(_.getAbsolutePath.endsWith("parquet")) == 4)
 
-      spark.range(start = 0, end = 4, step = 1, numPartitions = 1)
-        .write.option("maxRecordsPerFile", 2).mode("overwrite").parquet(f.getAbsolutePath)
-      assert(recursiveList(f).count(_.getAbsolutePath.endsWith("parquet")) == 2)
+        spark.range(start = 0, end = 4, step = 1, numPartitions = 1)
+          .write.option("maxRecordsPerFile", 2).mode("overwrite").parquet(f.getAbsolutePath)
+        assert(recursiveList(f).count(_.getAbsolutePath.endsWith("parquet")) == 2)
 
-      spark.range(start = 0, end = 4, step = 1, numPartitions = 1)
-        .write.option("maxRecordsPerFile", -1).mode("overwrite").parquet(f.getAbsolutePath)
-      assert(recursiveList(f).count(_.getAbsolutePath.endsWith("parquet")) == 1)
+        spark.range(start = 0, end = 4, step = 1, numPartitions = 1)
+          .write.option("maxRecordsPerFile", -1).mode("overwrite").parquet(f.getAbsolutePath)
+        assert(recursiveList(f).count(_.getAbsolutePath.endsWith("parquet")) == 1)
+      }
     }
   }
 

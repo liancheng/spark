@@ -75,11 +75,20 @@ case class InsertIntoHadoopFsRelationCommand(
     val qualifiedOutputPath = outputPath.makeQualified(fs.getUri, fs.getWorkingDirectory)
 
     val pathExists = fs.exists(qualifiedOutputPath)
+    // If we are appending data to an existing dir.
+    val isAppend = pathExists && (mode == SaveMode.Append)
+
+    val committer = FileCommitProtocol.instantiate(
+      sparkSession.sessionState.conf.fileCommitProtocolClass,
+      jobId = java.util.UUID.randomUUID().toString,
+      outputPath = outputPath.toString,
+      isAppend = isAppend)
+
     val doInsertion = (mode, pathExists) match {
       case (SaveMode.ErrorIfExists, true) =>
         throw new AnalysisException(s"path $qualifiedOutputPath already exists.")
       case (SaveMode.Overwrite, true) =>
-        deleteMatchingPartitions(fs, qualifiedOutputPath)
+        deleteMatchingPartitions(fs, qualifiedOutputPath, committer)
         true
       case (SaveMode.Append, _) | (SaveMode.Overwrite, _) | (SaveMode.ErrorIfExists, false) =>
         true
@@ -88,15 +97,8 @@ case class InsertIntoHadoopFsRelationCommand(
       case (s, exists) =>
         throw new IllegalStateException(s"unsupported save mode $s ($exists)")
     }
-    // If we are appending data to an existing dir.
-    val isAppend = pathExists && (mode == SaveMode.Append)
 
     if (doInsertion) {
-      val committer = FileCommitProtocol.instantiate(
-        sparkSession.sessionState.conf.fileCommitProtocolClass,
-        jobId = java.util.UUID.randomUUID().toString,
-        outputPath = outputPath.toString,
-        isAppend = isAppend)
 
       FileFormatWriter.write(
         sparkSession = sparkSession,
@@ -121,7 +123,8 @@ case class InsertIntoHadoopFsRelationCommand(
    * Deletes all partition files that match the specified static prefix. Partitions with custom
    * locations are also cleared based on the custom locations map given to this class.
    */
-  private def deleteMatchingPartitions(fs: FileSystem, qualifiedOutputPath: Path): Unit = {
+  private def deleteMatchingPartitions(
+      fs: FileSystem, qualifiedOutputPath: Path, committer: FileCommitProtocol): Unit = {
     val staticPartitionPrefix = if (staticPartitionKeys.nonEmpty) {
       "/" + partitionColumns.flatMap { p =>
         staticPartitionKeys.get(p.name) match {
@@ -136,7 +139,7 @@ case class InsertIntoHadoopFsRelationCommand(
     }
     // first clear the path determined by the static partition keys (e.g. /table/foo=1)
     val staticPrefixPath = qualifiedOutputPath.suffix(staticPartitionPrefix)
-    if (fs.exists(staticPrefixPath) && !fs.delete(staticPrefixPath, true /* recursively */)) {
+    if (fs.exists(staticPrefixPath) && !committer.deleteWithJob(fs, staticPrefixPath, true)) {
       throw new IOException(s"Unable to clear output " +
         s"directory $staticPrefixPath prior to writing to it")
     }
@@ -146,7 +149,7 @@ case class InsertIntoHadoopFsRelationCommand(
         (staticPartitionKeys.toSet -- spec).isEmpty,
         "Custom partition location did not match static partitioning keys")
       val path = new Path(customLoc)
-      if (fs.exists(path) && !fs.delete(path, true)) {
+      if (fs.exists(path) && !committer.deleteWithJob(fs, path, true)) {
         throw new IOException(s"Unable to clear partition " +
           s"directory $path prior to writing to it")
       }

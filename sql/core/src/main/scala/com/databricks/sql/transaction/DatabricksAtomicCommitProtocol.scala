@@ -48,7 +48,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
   import DatabricksAtomicCommitProtocol._
 
   // Globally unique alphanumeric string. We decouple this from jobId for possible future use.
-  private val txnId: TxnId = math.abs(scala.util.Random.nextLong).toString
+  private val txnId: TxnId = newTxnId()
 
   // The list of files staged by this committer. These are collected to the driver on task commit.
   private val stagedFiles = mutable.Set[String]()
@@ -77,6 +77,42 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
     }
     stagedFiles += finalPath.toString
     finalPath.toString
+  }
+
+  override def deleteWithJob(_fs: FileSystem, path: Path, recursive: Boolean): Boolean = {
+    val fs = testingFs.getOrElse(_fs)
+    val sparkSession = SparkSession.getActiveSession.get
+    if (!sparkSession.sqlContext.getConf(
+        "com.databricks.sql.enableLogicalDelete", "true").toBoolean) {
+      return super.deleteWithJob(fs, path, recursive)
+    }
+    if (recursive && fs.getFileStatus(path).isFile) {
+      // In this case Spark is attempting to delete a file to make room for a directory.
+      // We cannot stage this sort of deletion, so just perform it immediately.
+      logWarning(s"Deleting $path immediately since it is a file not directory.")
+      return super.deleteWithJob(fs, path, true)
+    }
+    if (recursive) {
+      val (dirs, initialFiles) = fs.listStatus(path).partition(_.isDirectory)
+      val resolvedFiles = filterDirectoryListing(fs, path, initialFiles)
+      stagedDeletions ++= resolvedFiles.map(_.getPath).filter { path =>
+        path.getName match {
+          // Don't allow our metadata markers to be deleted with this API. That can result in
+          // unexpected results if e.g. a start marker is deleted in the middle of a job.
+          case STARTED_MARKER(_) | COMMITTED_MARKER(_) => false
+          case _ => true
+        }
+      }.toList
+      dirs.foreach { dir =>
+        deleteWithJob(fs, dir.getPath, true)
+      }
+    } else {
+      if (fs.getFileStatus(path).isDirectory) {
+        throw new IOException(s"Cannot delete directory $path unless recursive=true.")
+      }
+      stagedDeletions += path
+    }
+    true
   }
 
   private def getFilename(taskContext: TaskAttemptContext, ext: String): String = {
@@ -172,7 +208,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
    * @return the list of deleted files
    */
   def vacuum(path: Path, horizon: Long): List[Path] = {
-    val fs = path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+    val fs = testingFs.getOrElse(path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration))
     val (dirs, initialFiles) = fs.listStatus(path).partition(_.isDirectory)
 
     def checkPositive(time: Long): Long = { assert(time > 0); time }
@@ -203,12 +239,46 @@ object DatabricksAtomicCommitProtocol extends Logging {
             s"(${state.getStartTime(txnId)} < $horizon).")
           delete(file.getPath)
 
+        // always safe to delete since the commit marker is present
         case STARTED_MARKER(txnId) if state.isCommitted(txnId) &&
             checkPositive(file.getModificationTime) < horizon =>
           logInfo(s"Garbage collecting start marker ${file.getPath} of committed job.")
           delete(file.getPath)
 
         case _ =>
+      }
+    }
+
+    // Queue up stale markers for deletion. We do this by writing out a _committed file that
+    // will cause them to be garbage collected in the next cycle.
+    var deleteLater: List[Path] = Nil
+    for (file <- resolvedFiles) {
+      file.getPath.getName match {
+        case name @ COMMITTED_MARKER(txnId) if state.getDeletionTime(name) == 0 &&
+            checkPositive(file.getModificationTime) < horizon =>
+          val startMarker = new Path(file.getPath.getParent, s"_started_$txnId")
+          if (fs.exists(startMarker)) {
+            delete(startMarker)  // make sure we delete it just in case
+          }
+          deleteLater ::= file.getPath
+
+        // the data files were deleted above, but we need to delay marker deletion
+        case STARTED_MARKER(txnId) if !state.isCommitted(txnId) &&
+            checkPositive(file.getModificationTime) < horizon =>
+          deleteLater ::= file.getPath
+
+        case _ =>
+      }
+    }
+
+    if (deleteLater.nonEmpty) {
+      val vacuumCommitMarker = new Path(path, "_committed_vacuum" + newTxnId())
+      val output = fs.create(vacuumCommitMarker)
+      deleteLater ::= vacuumCommitMarker  // it's self-deleting!
+      try {
+        serializeFileChanges(Nil, deleteLater.map(_.getName), output)
+      } finally {
+        output.close()
       }
     }
 
@@ -223,4 +293,6 @@ object DatabricksAtomicCommitProtocol extends Logging {
 
     deletedPaths
   }
+
+  private def newTxnId(): String = math.abs(scala.util.Random.nextLong).toString
 }

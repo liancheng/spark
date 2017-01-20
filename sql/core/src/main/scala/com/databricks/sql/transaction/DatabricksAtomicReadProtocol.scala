@@ -8,7 +8,7 @@
 
 package org.apache.spark.sql.transaction
 
-import java.io.{File, InputStream, InputStreamReader, IOException, OutputStream}
+import java.io.{File, FileNotFoundException, InputStream, InputStreamReader, IOException, OutputStream}
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
@@ -60,10 +60,10 @@ object DatabricksAtomicReadProtocol extends Logging {
       val name = f.getPath.getName
       name match {
         case _ if state.getDeletionTime(name) > 0 =>
-          logInfo(s"Ignoring ${f.getPath} since it is marked as deleted.")
+          logDebug(s"Ignoring ${f.getPath} since it is marked as deleted.")
           false
         case FILE_WITH_TXN_ID(txnId) if !state.isFileCommitted(txnId, name) =>
-          logInfo(s"Ignoring ${f.getPath} since it is not marked as committed.")
+          logDebug(s"Ignoring ${f.getPath} since it is not marked as committed.")
           false
         case _ =>
           true
@@ -155,7 +155,7 @@ object DatabricksAtomicReadProtocol extends Logging {
 
     if ((state.missingMarkers.nonEmpty || state.missingDataFiles.nonEmpty) &&
           state.lastModified > clock.getTimeMillis - horizonMillis) {
-      logDebug("Repeating list request since some files are suspected to be missing.")
+      logInfo("Repeating list request since some files are suspected to be missing.")
       val newlyCommitted = mutable.Set[TxnId]()
       val extraStatuses = fs.listStatus(dir).filter { f =>
         f.isFile && (f.getPath.getName match {
@@ -199,6 +199,9 @@ object DatabricksAtomicReadProtocol extends Logging {
         (state, initialFiles)
       }
     } else {
+      logDebug("List request was not repeated since " + state.missingMarkers.nonEmpty + " " +
+        state.missingDataFiles.nonEmpty + " " + state.lastModified + " " + clock.getTimeMillis +
+        " " + horizonMillis)
       (state, initialFiles)
     }
   }
@@ -232,12 +235,16 @@ object DatabricksAtomicReadProtocol extends Logging {
             }
             commitMarkers(txnId) = filesAdded.toSet
           } catch {
+            case e: FileNotFoundException =>
+              logWarning("Job commit marker disappeared before we could read it: " + stat)
+              corruptCommitMarkers.add(txnId)
+
             case NonFatal(e) =>
               // we use SparkEnv for this escape-hatch flag since this may be called on executors
               if (SparkEnv.get.conf.getBoolean(
                   "spark.databricks.sql.ignoreCorruptCommitMarkers", false)) {
                 logWarning("Failed to read job commit marker: " + stat, e)
-                corruptCommitMarkers += txnId
+                corruptCommitMarkers.add(txnId)
               } else {
                 throw new IOException("Failed to read job commit marker: " + stat, e)
               }
