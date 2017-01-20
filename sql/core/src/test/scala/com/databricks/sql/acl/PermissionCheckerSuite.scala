@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016 Databricks, Inc.
+ * Copyright (C) 2016 Databricks, Inc.
  *
  * Portions of this software incorporate or are derived from software contained within Apache Spark,
  * and this modified software differs from the Apache Spark software provided under the Apache
