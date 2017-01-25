@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.mutable
 import scala.util.control.NonFatal
 
-import org.apache.hadoop.fs._
+import org.apache.hadoop.fs.{FileSystem => HadoopFileSystem, _}
 import org.apache.hadoop.mapreduce._
 import org.json4s.NoTypeHints
 import org.json4s.jackson.Serialization
@@ -79,7 +79,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
     finalPath.toString
   }
 
-  override def deleteWithJob(_fs: FileSystem, path: Path, recursive: Boolean): Boolean = {
+  override def deleteWithJob(_fs: HadoopFileSystem, path: Path, recursive: Boolean): Boolean = {
     val fs = testingFs.getOrElse(_fs)
     val sparkSession = SparkSession.getActiveSession.get
     if (!sparkSession.sqlContext.getConf(
