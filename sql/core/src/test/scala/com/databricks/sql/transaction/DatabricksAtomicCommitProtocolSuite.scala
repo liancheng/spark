@@ -389,7 +389,8 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     assert(numLists >= 10)
   }
 
-  test("vacuum safety randomized stress test") {
+  // SC-5729: This test case is flaky
+  ignore("vacuum safety randomized stress test") {
     val seed = System.currentTimeMillis
     val random = new scala.util.Random(seed)
     // scalastyle:off println
