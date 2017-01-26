@@ -20,6 +20,8 @@ package org.apache.spark.sql.execution
 import java.nio.charset.StandardCharsets
 import java.sql.Timestamp
 
+import com.databricks.sql.acl.MakeRunnableCommandTrusted
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -101,7 +103,8 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
     EnsureRequirements(sparkSession.sessionState.conf),
     CollapseCodegenStages(sparkSession.sessionState.conf),
     ReuseExchange(sparkSession.sessionState.conf),
-    ReuseSubquery(sparkSession.sessionState.conf))
+    ReuseSubquery(sparkSession.sessionState.conf),
+    MakeRunnableCommandTrusted)
 
   protected def stringOrError[A](f: => A): String =
     try f.toString catch { case e: AnalysisException => e.toString }

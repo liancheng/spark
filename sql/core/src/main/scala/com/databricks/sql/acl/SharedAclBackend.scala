@@ -138,6 +138,11 @@ class SharedAclBackend {
     }
     log.info(s"modify[token=$token, modifications=${modifications.mkString("[", ",", "]")}]")
   }
+
+  /**
+   * Get a token from the Databricks DriverLocal. This is not implemented.
+   */
+  def getTokenFromLocalContext(): Option[String] = None
 }
 
 object SharedAclBackend {

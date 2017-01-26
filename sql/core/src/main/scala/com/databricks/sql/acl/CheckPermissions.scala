@@ -32,6 +32,9 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
   val permissionChecker = new PermissionChecker(aclClient)
 
   def apply(plan: LogicalPlan): Unit = {
+    if (CheckPermissions.isTrusted) {
+      return
+    }
     getRequestsToCheck(plan).foreach { request =>
       if (!permissionChecker(request)) {
         throw new SecurityException(toErrorMessageForFailedRequest(request))
@@ -371,5 +374,20 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     }
 
     s"User does not ${actionString} ${request.securable.prettyString}"
+  }
+}
+
+private[databricks] object CheckPermissions {
+  private val trusted = new ThreadLocal[Boolean] {
+    override def initialValue(): Boolean = false
+  }
+
+  private[databricks] def isTrusted: Boolean = trusted.get()
+
+  private[databricks] def trusted[T](block: => T): T = {
+    trusted.set(true)
+    try block finally {
+      trusted.set(false)
+    }
   }
 }

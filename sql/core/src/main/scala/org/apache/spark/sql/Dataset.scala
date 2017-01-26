@@ -245,7 +245,12 @@ class Dataset[T] private[sql](
    */
   private[sql] def showString(_numRows: Int, truncate: Int = 20): String = {
     val numRows = _numRows.max(0)
-    val takeResult = toDF().take(numRows + 1)
+    val takeResult = withAction("show", limit(numRows + 1).queryExecution) { plan =>
+      val encoder = RowEncoder(schema).resolveAndBind(
+        logicalPlan.output,
+        sparkSession.sessionState.analyzer)
+      plan.executeCollect().map(encoder.fromRow)
+    }
     val hasMoreData = takeResult.length > numRows
     val data = takeResult.take(numRows)
 

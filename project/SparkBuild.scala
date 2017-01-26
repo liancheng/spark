@@ -416,6 +416,8 @@ object SparkBuild extends PomBuild {
      """.stripMargin)
   val sparkSql = taskKey[Unit]("starts the spark sql CLI.")
 
+  val sparkShellAcl = taskKey[Unit]("start a spark-shell with ACL support.")
+
   enable(Seq(
     connectInput in run := true,
     fork := true,
@@ -425,6 +427,15 @@ object SparkBuild extends PomBuild {
 
     sparkShell := {
       (runMain in Compile).toTask(" org.apache.spark.repl.Main -usejavacp").value
+    },
+
+    sparkShellAcl := {
+      (runMain in Compile).toTask(
+        " -Dspark.sql.extensions=com.databricks.sql.acl.HiveAclExtensions" +
+        " -Dspark.databricks.acl.provider=com.databricks.sql.acl.ReflectionBackedAclProvider" +
+        " -Dspark.databricks.acl.client=com.databricks.sql.acl.SharedAclBackend" +
+        " -Dspark.databricks.acl.enabled=true" +
+        " org.apache.spark.repl.Main -usejavacp").value
     },
 
     sparkPackage := {
