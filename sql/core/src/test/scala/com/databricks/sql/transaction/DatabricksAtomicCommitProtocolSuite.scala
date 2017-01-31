@@ -389,8 +389,68 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     assert(numLists >= 10)
   }
 
-  // SC-5729: This test case is flaky
-  ignore("vacuum safety randomized stress test") {
+  test("vacuum respects fs timestamp") {
+    val clock = new ManualClock(123456789L)
+
+    val fakeFs = new RawLocalFileSystem() {
+      override def listStatus(path: Path): Array[FileStatus] = {
+        super.listStatus(path).map { stat =>
+          new FileStatus(
+            stat.getLen,
+            stat.isDir,
+            0,
+            stat.getBlockSize,
+            clock.getTimeMillis,
+            stat.getPath)
+        }
+      }
+    }
+    fakeFs.initialize(new File("/").toURI, new Configuration())
+
+    def checkVacuum(dir: File, horizon: Long, expectedNumDeletes: Int): Unit = {
+      val deleted = DatabricksAtomicCommitProtocol.vacuum(
+        new Path(dir.getAbsolutePath), horizon
+      ).filterNot(_.getName.contains(".crc"))
+      assert(deleted.length == expectedNumDeletes)
+    }
+
+    try {
+      DatabricksAtomicReadProtocol.testingFs = Some(fakeFs)
+      DatabricksAtomicReadProtocol.clock = clock
+
+      // vacuum of logically deleted files
+      withTempDir { dir =>
+        spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+        spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+        checkVacuum(dir, clock.getTimeMillis - 1, 0)
+        checkVacuum(dir, clock.getTimeMillis, 3)  // two start markers, 1 data file
+        assert(spark.read.parquet(dir.getAbsolutePath).count() == 10)
+        checkVacuum(dir, clock.getTimeMillis - 1, 0)
+        checkVacuum(dir, clock.getTimeMillis, 3)  // 2 commit markers + the vacuum commit marker
+        assert(spark.read.parquet(dir.getAbsolutePath).count() == 10)
+      }
+
+      // vacuum of files from uncommitted jobs
+      withTempDir { dir =>
+        spark.range(10).repartition(5).write.mode("overwrite").parquet(dir.getAbsolutePath)
+        list(dir).filter(_.startsWith("_committed")).foreach { name =>
+          new File(dir, name).delete()
+        }
+        assert(countFiles(dir) == 0)
+        checkVacuum(dir, clock.getTimeMillis - 1, 0)
+        checkVacuum(dir, clock.getTimeMillis, 5)  // just the data files
+        assert(countFiles(dir) == 0)
+        checkVacuum(dir, clock.getTimeMillis - 1, 0)
+        checkVacuum(dir, clock.getTimeMillis, 2)  // the start marker and the vacuum commit marker
+        assert(countFiles(dir) == 0)
+      }
+    } finally {
+      DatabricksAtomicReadProtocol.testingFs = None
+      DatabricksAtomicReadProtocol.clock = new SystemClock
+    }
+  }
+
+  test("vacuum safety randomized stress test") {
     val seed = System.currentTimeMillis
     val random = new scala.util.Random(seed)
     // scalastyle:off println
@@ -442,11 +502,6 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       }
     }
     inconsistentFs.initialize(new File("/").toURI, new Configuration())
-
-    def countFiles(dir: File): Long = {
-      val idx = new InMemoryFileIndex(spark, Seq(new Path(dir.getAbsolutePath)), Map.empty, None)
-      idx.allFiles().length
-    }
 
     def checkVacuum(dir: File, expectedNumDeletes: Int): Unit = {
       inconsistentFs.flushDeletes()  // emulate waiting for many hours here
@@ -515,5 +570,10 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
   private def list(dir: File): Set[String] = {
     dir.listFiles().map(_.getName).filterNot(_.startsWith(".")).toSet
+  }
+
+  private def countFiles(dir: File): Long = {
+    val idx = new InMemoryFileIndex(spark, Seq(new Path(dir.getAbsolutePath)), Map.empty, None)
+    idx.allFiles().length
   }
 }

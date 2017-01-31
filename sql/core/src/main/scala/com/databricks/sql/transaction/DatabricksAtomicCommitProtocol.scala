@@ -224,7 +224,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
     for (file <- resolvedFiles) {
       file.getPath.getName match {
         // we wait for a horizon to avoid killing Spark jobs using those files
-        case name if state.getDeletionTime(name) > 0 && state.getDeletionTime(name) < horizon =>
+        case name if state.getDeletionTime(name) > 0 && state.getDeletionTime(name) <= horizon =>
           logInfo(s"Garbage collecting ${file.getPath} since it is marked as deleted.")
           delete(file.getPath)
 
@@ -234,14 +234,14 @@ object DatabricksAtomicCommitProtocol extends Logging {
           delete(file.getPath)
 
         case name @ FILE_WITH_TXN_ID(txnId) if !state.isCommitted(txnId) &&
-            checkPositive(state.getStartTime(txnId)) < horizon =>
+            checkPositive(state.getStartTime(txnId)) <= horizon =>
           logInfo(s"Garbage collecting ${file.getPath} since its job has timed out " +
-            s"(${state.getStartTime(txnId)} < $horizon).")
+            s"(${state.getStartTime(txnId)} <= $horizon).")
           delete(file.getPath)
 
         // always safe to delete since the commit marker is present
         case STARTED_MARKER(txnId) if state.isCommitted(txnId) &&
-            checkPositive(file.getModificationTime) < horizon =>
+            checkPositive(file.getModificationTime) <= horizon =>
           logInfo(s"Garbage collecting start marker ${file.getPath} of committed job.")
           delete(file.getPath)
 
@@ -255,7 +255,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
     for (file <- resolvedFiles) {
       file.getPath.getName match {
         case name @ COMMITTED_MARKER(txnId) if state.getDeletionTime(name) == 0 &&
-            checkPositive(file.getModificationTime) < horizon =>
+            checkPositive(file.getModificationTime) <= horizon =>
           val startMarker = new Path(file.getPath.getParent, s"_started_$txnId")
           if (fs.exists(startMarker)) {
             delete(startMarker)  // make sure we delete it just in case
@@ -264,7 +264,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
 
         // the data files were deleted above, but we need to delay marker deletion
         case STARTED_MARKER(txnId) if !state.isCommitted(txnId) &&
-            checkPositive(file.getModificationTime) < horizon =>
+            checkPositive(file.getModificationTime) <= horizon =>
           deleteLater ::= file.getPath
 
         case _ =>
