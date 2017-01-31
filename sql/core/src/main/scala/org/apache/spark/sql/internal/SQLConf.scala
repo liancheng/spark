@@ -23,7 +23,6 @@ import java.util.concurrent.TimeUnit
 import scala.collection.JavaConverters._
 import scala.collection.immutable
 
-import com.databricks.DatabricksAtomicCommitProtocol
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetOutputCommitter
 
@@ -31,6 +30,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config._
 import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.sql.catalyst.CatalystConf
+import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
 import org.apache.spark.sql.execution.streaming.ManifestFileCommitProtocol
 import org.apache.spark.util.Utils
 
@@ -387,7 +387,7 @@ object SQLConf {
     SQLConfigBuilder("spark.sql.sources.commitProtocolClass")
       .internal()
       .stringConf
-      .createWithDefault(classOf[DatabricksAtomicCommitProtocol].getName)
+      .createWithDefault(classOf[SQLHadoopMapReduceCommitProtocol].getName)
 
   val PARALLEL_PARTITION_DISCOVERY_THRESHOLD =
     SQLConfigBuilder("spark.sql.sources.parallelPartitionDiscovery.threshold")
