@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.mutable
 import scala.util.control.NonFatal
 
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem => HadoopFileSystem, _}
 import org.apache.hadoop.mapreduce._
 import org.json4s.NoTypeHints
@@ -166,6 +167,19 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
       // possible a concurrent reader sees neither the start nor end marker even with a re-list
     }
     logInfo("Job commit completed for " + jobId)
+
+    // Optional auto-vacuum.
+    val sparkSession = SparkSession.getActiveSession.get
+    if (sparkSession.sqlContext.getConf(
+        "com.databricks.sql.autoVacuumOnCommit", "true").toBoolean) {
+      logInfo("Auto-vacuuming directories updated by " + jobId)
+      try {
+        vacuum(sparkSession, dirs.seq.toSeq, None)
+      } catch {
+        case NonFatal(e) =>
+          logError("Auto-vacuum failed with error", e)
+      }
+    }
   }
 
   override def abortJob(jobContext: JobContext): Unit = {
@@ -193,8 +207,6 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
 object DatabricksAtomicCommitProtocol extends Logging {
   import DatabricksAtomicReadProtocol._
 
-  private val sparkSession = SparkSession.builder.getOrCreate()
-
   import scala.collection.parallel.ThreadPoolTaskSupport
 
   private lazy val tasksupport = new ThreadPoolTaskSupport(
@@ -207,8 +219,28 @@ object DatabricksAtomicCommitProtocol extends Logging {
    *
    * @return the list of deleted files
    */
-  def vacuum(path: Path, horizon: Long): List[Path] = {
-    val fs = testingFs.getOrElse(path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration))
+  def vacuum(
+      sparkSession: SparkSession, paths: Seq[Path], horizonHours: Option[Double]): List[Path] = {
+    val defaultHours = sparkSession.sqlContext.getConf(
+      "com.databricks.sql.defaultVacuumRetentionHours", "48.0").toDouble
+    val hours = horizonHours.getOrElse(defaultHours)
+    val horizon = clock.getTimeMillis - (hours * 60 * 60 * 1000).toLong
+
+    logInfo(s"Started VACUUM on $paths with $horizon (now - $hours hours)")
+
+    if (paths.length == 1) {
+      vacuum0(paths(0), horizon, sparkSession.sparkContext.hadoopConfiguration)
+    } else {
+      val pseq = paths.par
+      pseq.tasksupport = tasksupport
+      pseq.map { p =>
+        vacuum0(p, horizon, sparkSession.sparkContext.hadoopConfiguration)
+      }.reduce(_ ++ _)
+    }
+  }
+
+  private[transaction] def vacuum0(path: Path, horizon: Long, conf: Configuration): List[Path] = {
+    val fs = testingFs.getOrElse(path.getFileSystem(conf))
     val (dirs, initialFiles) = fs.listStatus(path).partition(_.isDirectory)
 
     def checkPositive(time: Long): Long = { assert(time > 0); time }
@@ -235,7 +267,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
 
         case name @ FILE_WITH_TXN_ID(txnId) if !state.isCommitted(txnId) &&
             checkPositive(state.getStartTime(txnId)) <= horizon =>
-          logInfo(s"Garbage collecting ${file.getPath} since its job has timed out " +
+          logWarning(s"Garbage collecting ${file.getPath} since its job has timed out " +
             s"(${state.getStartTime(txnId)} <= $horizon).")
           delete(file.getPath)
 
@@ -284,7 +316,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
 
     // recurse
     for (d <- dirs) {
-      deletedPaths :::= vacuum(d.getPath, horizon)
+      deletedPaths :::= vacuum0(d.getPath, horizon, conf)
       if (fs.listStatus(d.getPath).isEmpty) {
         logInfo(s"Garbage collecting empty directory ${d.getPath}")
         delete(d.getPath)

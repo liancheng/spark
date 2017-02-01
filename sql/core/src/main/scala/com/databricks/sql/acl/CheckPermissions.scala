@@ -230,6 +230,11 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case CleanPermissionsCommand(_, securable) =>
       toResolvedSecurables(securable).map(Own)
 
+    case vacuum: VacuumTableCommand if vacuum.table.isDefined =>
+      toSecurables(vacuum.table.get).map(toDelete)
+    case vacuum: VacuumTableCommand if vacuum.path.isDefined =>
+      Seq(Modify(AnyFile))
+
     case _ if alwaysPermit(command) => Nil
     case _ =>
       throw new SecurityException(s"Could not verify permissions for ${command.simpleString}")

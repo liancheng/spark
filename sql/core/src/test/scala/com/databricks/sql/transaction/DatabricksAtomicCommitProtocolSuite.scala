@@ -323,6 +323,78 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
+  test("vacuum horizon respects sql config") {
+    withTempDir { dir =>
+      val df = spark.range(10).selectExpr("id", "id as A", "id as B")
+      df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
+      df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
+      assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 0)
+      withSQLConf("com.databricks.sql.defaultVacuumRetentionHours" -> "0.0") {
+        assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 0)
+        // removes the data files and commit markers from the first job, start markers from 2nd
+        assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 30)
+      }
+    }
+  }
+
+  test("auto vacuum respects sql config") {
+    withTempDir { dir =>
+      val df = spark.range(10).selectExpr("id", "id as A", "id as B")
+      for (i <- 1 to 2) {
+        df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
+        df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
+      }
+      // autovacuum will not remove anything here since not enough time has passed
+      assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 4)
+
+      // autovacuum will remove the prior 4 files
+      withSQLConf("com.databricks.sql.defaultVacuumRetentionHours" -> "0.0") {
+        df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
+        assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 1)
+      }
+
+      // autovacuum disabled
+      withSQLConf("com.databricks.sql.autoVacuumOnCommit" -> "false") {
+        df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
+        assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 2)
+      }
+    }
+  }
+
+  test("vacuum table basic") {
+    withTempDir { dir =>
+      withTable("testTable") {
+        spark.sql(
+          "create table testTable (id bigint) using parquet " +
+          s"options (path '${dir.getAbsolutePath}')")
+        spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+        spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+        assert(spark.sql("vacuum testTable").count == 0)
+        // removes the overwritten file and the start markers
+        assert(spark.sql("vacuum testTable retain 0.0 hours").count == 3)
+      }
+    }
+  }
+
+  test("vacuum table works with custom locations") {
+    withTempDir { dir =>
+      spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+      spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+      assert(dir.listFiles().count(_.getName.startsWith("part")) == 2)  // 1 is garbage now
+      withTable("testTable") {
+        val df = spark.range(10).selectExpr("id", "id as A", "id as B")
+        df.write.partitionBy("A", "B").mode("overwrite").saveAsTable("testTable")
+        spark.sql(s"""
+          |alter table testTable partition (A=0, B=0)
+          |set location '${dir.getAbsolutePath}'""".stripMargin)
+        // removes the overwritten file, the start markers, and 10 more from the larger table
+        assert(spark.sql("vacuum testTable retain 0.0 hours").count == 13)
+        assert(list(dir).count(_.startsWith("part")) == 1)
+        assert(list(dir).count(_.startsWith("_start")) == 0)
+      }
+    }
+  }
+
   test("randomized consistency stress test") {
     val seed = System.currentTimeMillis
     val random = new scala.util.Random(seed)
@@ -408,8 +480,8 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     fakeFs.initialize(new File("/").toURI, new Configuration())
 
     def checkVacuum(dir: File, horizon: Long, expectedNumDeletes: Int): Unit = {
-      val deleted = DatabricksAtomicCommitProtocol.vacuum(
-        new Path(dir.getAbsolutePath), horizon
+      val deleted = DatabricksAtomicCommitProtocol.vacuum0(
+        new Path(dir.getAbsolutePath), horizon, spark.sparkContext.hadoopConfiguration
       ).filterNot(_.getName.contains(".crc"))
       assert(deleted.length == expectedNumDeletes)
     }

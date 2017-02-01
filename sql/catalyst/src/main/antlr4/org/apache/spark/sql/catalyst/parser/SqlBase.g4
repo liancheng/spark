@@ -150,7 +150,7 @@ statement
     | SET ROLE .*?                                                     #failNativeCommand
     | SET .*?                                                          #setConfiguration
     | RESET                                                            #resetConfiguration
-    | VACUUM path=STRING (RETAIN number HOURS)?                        #vacuumPath
+    | VACUUM (path=STRING | tableIdentifier) (RETAIN number HOURS)?    #vacuumTable
     | unsupportedHiveNativeCommands .*?                                #failNativeCommand
     ;
 
