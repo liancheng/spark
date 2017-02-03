@@ -7,7 +7,7 @@ SPARK_ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd /tmp
 
-VERSION='1.1.7.1007'
+VERSION='1.1.17.1017'
 FILENAME="RedshiftJDBC4-$VERSION.jar"
 
 wget "https://s3.amazonaws.com/redshift-downloads/drivers/$FILENAME"

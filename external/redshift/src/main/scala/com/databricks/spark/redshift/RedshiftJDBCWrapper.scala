@@ -9,6 +9,7 @@
 
 package com.databricks.spark.redshift
 
+import java.io.{File, FileOutputStream}
 import java.sql.{Connection, Driver, DriverManager, PreparedStatement, ResultSet, ResultSetMetaData, SQLException}
 import java.util.Properties
 import java.util.concurrent.{Executors, ThreadFactory}
@@ -17,9 +18,11 @@ import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.JavaConverters._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.Duration
+import scala.io.Source
 import scala.util.Try
 import scala.util.control.NonFatal
 
+import org.apache.commons.io.IOUtils
 import org.slf4j.LoggerFactory
 
 import org.apache.spark.SPARK_VERSION
@@ -45,6 +48,25 @@ private[redshift] class JDBCWrapper {
       }
     }
     ExecutionContext.fromExecutorService(Executors.newCachedThreadPool(threadFactory))
+  }
+
+  private lazy val redshiftSslCert: File = {
+    val outFile = File.createTempFile("redshift-ssl-ca-cert", ".tmp")
+    outFile.deleteOnExit()
+    try {
+      val urlInput = Source.fromURL(
+        "https://s3.amazonaws.com/redshift-downloads/redshift-ssl-ca-cert.pem").reader()
+      IOUtils.copy(urlInput, new FileOutputStream(outFile))
+      log.info("Downloaded Amazon Redshift SSL certificate.")
+    } catch {
+      case e: java.io.IOException =>
+        log.warn("Failed to download Amazon Redshift certificate. " +
+          "Falling back to a pre-packaged certificate.",
+          e)
+        val resInput = getClass.getResourceAsStream("/redshift-ssl-ca-cert.pem")
+        IOUtils.copy(resInput, new FileOutputStream(outFile))
+    }
+    outFile
   }
 
   /**
@@ -223,6 +245,34 @@ private[redshift] class JDBCWrapper {
     credentials.foreach { case(user, password) =>
       properties.setProperty("user", user)
       properties.setProperty("password", password)
+    }
+    // We enable SSL by default, unless the user provides any explicit SSL-related settings.
+    if (!(url.contains("?ssl") || url.contains("&ssl"))) {
+      val driverVersion = Utils.classForName(driverClass).getPackage.getImplementationVersion
+      if (driverClass.contains("redshift") &&
+          Utils.compareVersions(driverVersion, "1.1.17.1017") < 0) {
+        // The Redshift driver only started supporting `sslRootCert` since version "1.1.17".
+        // With older drivers the combination of options below results in an uninformative
+        // `GeneralSSLEngine` error.
+        // scalastyle:off
+        throw new RuntimeException(
+          s"""Old version of Redshift JDBC driver detected ($driverVersion), which does not support
+             |the `sslRootCert` option that's needed for auto-enabling full SSL encryption.
+             |The `sslRootCert` option is only supported in versions 1.1.17 and higher.
+             |See https://s3.amazonaws.com/redshift-downloads/drivers/Amazon+Redshift+JDBC+Release+Notes.pdf
+             |If you're willing to proceed without SSL, then explicitly disable it by adding
+             |`ssl=false` to your JDBC URL.
+          """.stripMargin)
+        // scalastyle:on
+      } else {
+        log.info("Auto-enabling full SSL encryption for JDBC connection to Redshift")
+        properties.setProperty("ssl", "true")
+        properties.setProperty("sslMode", "verify-full")
+        properties.setProperty("sslRootCert", redshiftSslCert.toString)
+      }
+    } else {
+      log.info("Not auto-enabling full SSL encryption for JDBC connection to Redshift because " +
+        "explicit SSL-related options were detected in the JDBC URL")
     }
     driver.connect(url, properties)
   }

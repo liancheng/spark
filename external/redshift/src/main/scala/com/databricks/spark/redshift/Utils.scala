@@ -14,6 +14,7 @@ import java.util.UUID
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+import scala.util.matching.Regex
 
 import com.amazonaws.services.s3.{AmazonS3Client, AmazonS3URI}
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration
@@ -203,5 +204,24 @@ private[redshift] object Utils {
    */
   def escapeJdbcString(s: String): String = {
     s.replace("\\", "\\\\").replace("'", "\\'")
+  }
+
+  /**
+   * Compares two version strings, returning <0 for "lower", 0 for "equal" and >0 for "higher".
+   *
+   * Extracts all numbers from the given input strings and throws exception if the two resulting
+   * lists are of different sizes.
+   */
+  def compareVersions(str1: String, str2: String): Int = {
+    val numberPattern = "[0-9]+".r
+
+    val vals1 = numberPattern.findAllIn(str1).map(Integer.valueOf)
+    val vals2 = numberPattern.findAllIn(str2).map(Integer.valueOf)
+
+    if (vals1.length != vals2.length) {
+      throw new IllegalArgumentException(s"Versions ${str1} and ${str2} have different sizes.")
+    }
+
+    (vals1 zip vals2) collectFirst { case (v1, v2) if v1 != v2 => v1 - v2} getOrElse 0
   }
 }
