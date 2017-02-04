@@ -137,23 +137,27 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
 
     case create: CreateTable =>
       toSecurables(create.tableDesc.identifier.database).map(Create) ++
-        create.query.toSeq.flatMap(queryToRequests)
+        create.query.toSeq.flatMap(queryToRequests) ++ newTableToFileRequests(create.tableDesc)
     case _: CreateTempViewUsing =>
       Seq(Select(AnyFile))
     case create: CreateDataSourceTableCommand =>
-      toSecurables(create.table.identifier.database).map(Create)
+      toSecurables(create.table.identifier.database).map(Create) ++
+        newTableToFileRequests(create.table)
     case create: CreateTableCommand =>
-      toSecurables(create.table.identifier.database).map(Create)
+      toSecurables(create.table.identifier.database).map(Create) ++
+        newTableToFileRequests(create.table)
     case create: CreateViewCommand if create.viewType == PersistedView =>
       toSecurables(create.name.database).map(Create)
-    case create: CreateViewCommand => Nil
+    case _: CreateViewCommand => Nil
     case create: CreateTableLikeCommand =>
       toSecurables(create.targetTable.database).map(Create) ++
         toSecurables(create.sourceTable).map(ReadMetadata)
 
     /** Alter table partitions */
     case alter: AlterTableAddPartitionCommand =>
-      toSecurables(alter.tableName).map(toInsert)
+      val locationSpecified: Boolean = alter.partitionSpecsAndLocs.exists((_._2.isDefined))
+      val fileRequests: Seq[Request] = if (locationSpecified) defaultFileRequests else Seq.empty
+      toSecurables(alter.tableName).map(toInsert) ++ fileRequests
     case alter: AlterTableDropPartitionCommand =>
       toSecurables(alter.tableName).map(toDelete)
     case alter: AlterTableRenamePartitionCommand =>
@@ -171,7 +175,7 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case alter: AlterTableUnsetPropertiesCommand =>
       toSecurables(alter.tableName).map(Own)
     case alter: AlterTableSetLocationCommand =>
-      toSecurables(alter.tableName).map(Own)
+      toSecurables(alter.tableName).map(Own) ++ defaultFileRequests
 
     case explain: DescribeTableCommand =>
       toSecurables(explain.table).map(ReadMetadata)
@@ -213,7 +217,7 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case show: ShowCreateTableCommand =>
       toSecurables(show.table).map(ReadMetadata)
 
-    case create: CreateDatabaseCommand => Seq(Request(Catalog, Create))
+    case _: CreateDatabaseCommand => Seq(Request(Catalog, Create))
     case alter: AlterDatabasePropertiesCommand =>
       Seq(Request(Database(alter.databaseName), Own))
     case drop: DropDatabaseCommand =>
@@ -281,6 +285,23 @@ class CheckPermissions(catalog: PublicCatalog, aclClient: AclClient)
     case NoOpRunnableCommand => true
     case _: ShowPermissionsCommand => true
     case _ => false
+  }
+
+  /**
+   * A set of default requests to use data source as table or partition. Currently, fine-grained
+   * path-based permission check is not supported, so we request select and modify permissions for
+   * all the files.
+   */
+  private lazy val defaultFileRequests: Seq[Request] = Seq(Select(AnyFile), Modify(AnyFile))
+
+  /**
+   * The extra requests to use data source to create a table.
+   * @param table The table to be created from a location.
+   */
+  private def newTableToFileRequests(table: CatalogTable): Seq[Request] = {
+    val locationSpecified: Boolean = table.storage.locationUri.isDefined ||
+      table.properties.get("path").isDefined
+    if (locationSpecified) defaultFileRequests else Seq.empty
   }
 
   /**

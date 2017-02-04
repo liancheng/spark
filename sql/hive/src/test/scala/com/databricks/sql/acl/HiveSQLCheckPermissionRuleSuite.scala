@@ -78,12 +78,18 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
     }
   }
 
-  def withTable(tableName: TableIdentifier, owner: String, isDataSource: Boolean = true)
+  def withTable(
+      tableName: TableIdentifier,
+      owner: String,
+      isDataSource: Boolean = true,
+      locationOpt: Option[String] = None)
       (action: => Unit): Unit = {
     val createSql = if (isDataSource) {
-      s"create table ${tableName.toString} (a int, p int)"
+      val location = locationOpt.map(loc => s"using parquet options(path '$loc')").getOrElse("")
+      s"create table ${tableName.toString} (a int, p int) $location"
     } else {
-      s"create table ${tableName.toString} (a int) partitioned by (p int)"
+      val location = locationOpt.map(loc => s"location '$loc'").getOrElse("")
+      s"create table ${tableName.toString} (a int) partitioned by (p int) $location"
     }
 
     try {
@@ -112,6 +118,14 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
         spark.sql(s"drop view if exists $viewName")
       }
     }
+  }
+
+  def withTempFile(action: String => Unit): Unit = {
+    val path = Files.createTempDirectory("somedata").toString + "/SC-5604"
+    asUser("super") {
+      spark.range(1000).write.parquet(path)
+    }
+    action(path)
   }
 
   def asUser(userName: String)(action: => Unit): Unit = {
@@ -594,5 +608,79 @@ class HiveSQLCheckPermissionRuleSuite extends TestHiveExtensions(TestHiveAclExte
       assert(spark.sql("select * from x").count === 1000L)
       spark.sql(s"drop view x")
     }
+  }
+
+  test("create table from file") {
+    val tableId = TableIdentifier("t1", Some("perm"))
+    asUser("super") { spark.sql("grant create on database perm to U") }
+
+    withTempFile { path =>
+      withTable(tableId, "U") {
+        assert(TestAclClient.getOwner(Table(tableId)).orNull === NamedPrincipal("U"))
+      }
+
+      intercept[SecurityException] {
+        withTable(tableId, "U", locationOpt = Some(path)) {}
+      }
+      intercept[SecurityException] {
+        withTable(tableId, "U", isDataSource = false, locationOpt = Some(path)) {}
+      }
+
+      grantAllFilePermissionsBySuper(spark, "U")
+
+      withTable(tableId, "U", locationOpt = Some(path)) {
+        assert(TestAclClient.getOwner(Table(tableId)).orNull === NamedPrincipal("U"))
+      }
+      withTable(tableId, "U", isDataSource = false, locationOpt = Some(path)) {
+        assert(TestAclClient.getOwner(Table(tableId)).orNull === NamedPrincipal("U"))
+      }
+    }
+  }
+
+  test("alter table add partition location") {
+    val tableId = TableIdentifier("t1", Some("perm"))
+    withTempFile { path =>
+      val alterAddPartitionLocStr = s"alter table $tableId add partition (p=10) location '$path'"
+      withTable(tableId, "super", isDataSource = false) {
+        asUser("super") { spark.sql(s"grant modify on table $tableId to U") }
+
+        asUser("U") {
+          intercept[SecurityException] {
+            spark.sql(alterAddPartitionLocStr)
+          }
+        }
+
+        grantAllFilePermissionsBySuper(spark, "U")
+
+        asUser("U") { spark.sql(alterAddPartitionLocStr) }
+      }
+    }
+  }
+
+  test("alter table set location") {
+    val tableId = TableIdentifier("t1", Some("perm"))
+    withTempFile { path =>
+      val alterAddPartition = s"alter table $tableId add partition (p=10)"
+      val alterSetPartitionLocStr = s"alter table $tableId partition (p=10) set location '$path'"
+      withTable(tableId, "super", isDataSource = false) {
+        asUser("super") { spark.sql(alterAddPartition) }
+        asUser("super") { spark.sql(s"alter table $tableId owner to U") }
+
+        asUser("U") {
+          intercept[SecurityException] {
+            spark.sql(alterSetPartitionLocStr)
+          }
+        }
+
+        grantAllFilePermissionsBySuper(spark, "U")
+
+        asUser("U") { spark.sql(alterSetPartitionLocStr) }
+      }
+    }
+  }
+
+  private def grantAllFilePermissionsBySuper(spark: SparkSession, user: String): Unit = {
+    asUser("super") { spark.sql(s"grant select on any file to $user") }
+    asUser("super") { spark.sql(s"grant modify on any file to $user") }
   }
 }
