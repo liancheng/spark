@@ -226,4 +226,79 @@ class JoinBenchmark extends BenchmarkBase {
      */
   }
 
+  ignore("broadcast nested loop inner join") {
+    sparkSession.conf.set("spark.sql.crossJoin.enabled", "true")
+    sparkSession.conf.set("spark.sql.autoBroadcastJoinThreshold", "100000000")
+    val Nsmall = 2000
+    val Nbig = 20000
+
+    // the benchmark output table has too long lines
+    // scalastyle:off
+    runBenchmark("bnl inner join small", Nsmall * Nsmall) {
+      val df1 = sparkSession.range(Nsmall).selectExpr(s"id as a1")
+      val df2 = sparkSession.range(Nsmall / 2).selectExpr(s"id as b1")
+      df1.join(df2, col("a1") < col("b1")).count()
+    }
+    /*
+    *Java HotSpot(TM) 64-Bit Server VM 1.8.0_121-b13 on Linux 4.8.13-1-ARCH
+    *Intel(R) Core(TM) i7-6600U CPU @ 2.60GHz
+    *bnl inner join small:                    Best/Avg Time(ms)    Rate(M/s)   Per Row(ns)   Relative
+    *------------------------------------------------------------------------------------------------
+    *bnl inner join small wholestage off            402 /  482          9.9         100.6       1.0X
+    *bnl inner join small wholestage on             159 /  330         25.2          39.7       2.5X
+    */
+
+    runBenchmark("bnl inner join big", Nbig * Nbig) {
+      val df1 = sparkSession.range(Nbig).selectExpr(s"id as a1")
+      val df2 = sparkSession.range(Nbig / 2).selectExpr(s"id as b1")
+      df1.join(df2, col("a1") < col("b1")).count()
+    }
+    /*
+    *Java HotSpot(TM) 64-Bit Server VM 1.8.0_121-b13 on Linux 4.8.13-1-ARCH
+    *Intel(R) Core(TM) i7-6600U CPU @ 2.60GHz
+    *bnl inner join big:                      Best/Avg Time(ms)    Rate(M/s)   Per Row(ns)   Relative
+    *------------------------------------------------------------------------------------------------
+    *bnl inner join big wholestage off             7568 / 8328         52.9          18.9       1.0X
+    *bnl inner join big wholestage on               797 /  954        502.0           2.0       9.5X
+    */
+    // scalastyle:on
+  }
+
+  ignore("broadcast nested loop existence join") {
+    sparkSession.conf.set("spark.sql.crossJoin.enabled", "true")
+    sparkSession.conf.set("spark.sql.autoBroadcastJoinThreshold", "100000000")
+    val Nsmall = 2000
+    val Nbig = 20000
+
+    // the benchmark output table has too long lines
+    // scalastyle:off
+    runBenchmark("bnl existence join small", Nsmall * Nsmall) {
+      val df1 = sparkSession.range(Nsmall).selectExpr(s"id as a1")
+      val df2 = sparkSession.range(Nsmall / 2).selectExpr(s"id as b1")
+      df1.join(df2, col("a1") < col("b1"), "leftsemi").count()
+    }
+    /*
+    *Java HotSpot(TM) 64-Bit Server VM 1.8.0_121-b13 on Linux 4.8.13-1-ARCH
+    *Intel(R) Core(TM) i7-6600U CPU @ 2.60GHz
+    *bnl existence join small:                Best/Avg Time(ms)    Rate(M/s)   Per Row(ns)   Relative
+    *------------------------------------------------------------------------------------------------
+    *bnl existence join small wholestage off        199 /  214         20.1          49.6       1.0X
+    *bnl existence join small wholestage on          98 /  107         40.7          24.6       2.0X
+    */
+
+    runBenchmark("bnl existence join big", Nbig * Nbig) {
+      val df1 = sparkSession.range(Nbig).selectExpr(s"id as a1")
+      val df2 = sparkSession.range(Nbig / 2).selectExpr(s"id as b1")
+      df1.join(df2, col("a1") < col("b1"), "leftsemi").count()
+    }
+    /*
+    *Java HotSpot(TM) 64-Bit Server VM 1.8.0_121-b13 on Linux 4.8.13-1-ARCH
+    *Intel(R) Core(TM) i7-6600U CPU @ 2.60GHz
+    *bnl existence join big:                  Best/Avg Time(ms)    Rate(M/s)   Per Row(ns)   Relative
+    *------------------------------------------------------------------------------------------------
+    *bnl existence join big wholestage off         1620 / 1659        247.0           4.0       1.0X
+    *bnl existence join big wholestage on           540 /  563        740.8           1.3       3.0X
+    */
+    // scalastyle:on
+  }
 }

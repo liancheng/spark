@@ -22,9 +22,10 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, CodegenFallback, ExprCode, GenerateUnsafeProjection}
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.physical._
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.{BinaryExecNode, CodegenSupport, SparkPlan}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.util.collection.{BitSet, CompactBuffer}
@@ -34,7 +35,7 @@ case class BroadcastNestedLoopJoinExec(
     right: SparkPlan,
     buildSide: BuildSide,
     joinType: JoinType,
-    condition: Option[Expression]) extends BinaryExecNode {
+    condition: Option[Expression]) extends BinaryExecNode with CodegenSupport {
 
   override lazy val metrics = Map(
     "numOutputRows" -> SQLMetrics.createMetric(sparkContext, "number of output rows"))
@@ -43,6 +44,13 @@ case class BroadcastNestedLoopJoinExec(
   private val (streamed, broadcast) = buildSide match {
     case BuildRight => (left, right)
     case BuildLeft => (right, left)
+  }
+
+  /** some join types do not yet have codegen */
+  override val supportCodegen: Boolean = (joinType, buildSide) match {
+    case (_: InnerLike, _) => true
+    case (LeftSemi | LeftAnti, BuildRight) => true
+    case _ => false
   }
 
   override def requiredChildDistribution: Seq[Distribution] = buildSide match {
@@ -374,5 +382,157 @@ case class BroadcastNestedLoopJoinExec(
         resultProj(r)
       }
     }
+  }
+
+  override def inputRDDs() : Seq[RDD[InternalRow]] = {
+    streamed.asInstanceOf[CodegenSupport].inputRDDs()
+  }
+
+  /**
+   * Returns code that evaluates the join condition and executes continue in the loop
+   * if the join condition is false.
+   * @param ctx the [[CodegenContext]]
+   * @param streamVars variables for the streamed side
+   * @param broadcastVars variables for the broadcast side
+   * @return code for the join condition
+   */
+  def getJoinConditionCode(
+      ctx: CodegenContext,
+      streamVars: Seq[ExprCode],
+      broadcastVars: Seq[ExprCode]): String = {
+    if (condition.isDefined) {
+      val vars = streamVars ++ broadcastVars
+      ctx.currentVars = vars
+      val outputs = streamed.output ++ broadcast.output
+      val eval = evaluateRequiredVariables(outputs, vars, condition.get.references)
+      val be = BindReferences.bindReference(condition.get, outputs).genCode(ctx)
+      s"""
+         |/* evaluate required variables  */
+         |$eval
+         |/* evaluate join condition */
+         |${be.code}
+         |/* test join condition */
+         |if (! (${be.value})) continue;
+       """.stripMargin
+    } else {
+      ""
+     }
+  }
+
+  /**
+   * Generate code for the broadcast side variables.
+   * @param ctx the [[CodegenContext]]
+   * @param broadcastRow the variable holding the broadcast (i.e. build side) row
+   * @return Seq of ExprCode for accessing the broadcast row columns
+   */
+  def genBroadcastVars(ctx: CodegenContext, broadcastRow: String): Seq[ExprCode] = {
+    ctx.INPUT_ROW = broadcastRow
+    ctx.currentVars = null
+    broadcast.output.zipWithIndex.map { case (e, i) =>
+      BoundReference(i, e.dataType, e.nullable).genCode(ctx)
+    }
+  }
+
+  /**
+   * Codegen equivalent of leftExistenceJoin method. Generates code for these joins:
+   * LeftSemi with BuildRight, Anti with BuildRight.
+   * @param ctx the [[CodegenContext]]
+   * @param broadcastRow name of the variable holding the broadcast row
+   * @param broadcastRelationVar name of the variable holding the broadcast relation
+   * @param broadcastVars Seq of gen codes for the broadcast row variables
+   * @param streamVars Seq of gen codes for the streamed row variables
+   * @param exists false for anti join, true otherwise
+   * @return code for join
+   */
+  def codegenLeftExistence(
+      ctx: CodegenContext,
+      broadcastRow: String,
+      broadcastRelationVar: String,
+      broadcastVars: Seq[ExprCode],
+      streamVars: Seq[ExprCode],
+      exists: Boolean): String = {
+    val foundMatch = ctx.freshName("foundMatch")
+    val joinConditionSkip = getJoinConditionCode(ctx, streamVars, broadcastVars)
+    val index = ctx.freshName("index")
+    val numOutput = metricTerm(ctx, "numOutputRows")
+    val existsVal = if (exists) {
+      "true"
+    } else {
+      "false"
+    }
+    s"""
+       |boolean $foundMatch = false;
+       |for(int $index = 0; $index < ${broadcastRelationVar}.length && !$foundMatch; ++$index) {
+       |  InternalRow $broadcastRow = ${broadcastRelationVar}[$index];
+       |  $joinConditionSkip
+       |  $foundMatch = true;
+       |}
+       |if ($foundMatch == $existsVal) {
+       |  $numOutput.add(1);
+       |  ${consume(ctx, streamVars)}
+       |}
+     """.stripMargin
+  }
+
+  /**
+   * Codegen equivalent of innerJoin method. Generates code for InnerJoin.
+   * @param ctx the [[CodegenContext]]
+   * @param broadcastRow name of the variable holding the broadcast row
+   * @param broadcastRelationVar name of the variable holding the broadcast relation
+   * @param broadcastVars Seq of gen codes for the broadcast row variables
+   * @param streamVars Seq of gen codes for the streamed row variables
+   * @return code for join
+   */
+  def codegenInner(
+      ctx: CodegenContext,
+      broadcastRow: String,
+      broadcastRelationVar: String,
+      broadcastVars: Seq[ExprCode],
+      streamVars: Seq[ExprCode]): String = {
+    val joinConditionSkip = getJoinConditionCode(ctx, streamVars, broadcastVars)
+    val index = ctx.freshName("index")
+    val numOutput = metricTerm(ctx, "numOutputRows")
+    val vars = buildSide match {
+      case BuildLeft => broadcastVars ++ streamVars
+      case BuildRight => streamVars ++ broadcastVars
+    }
+
+    s"""
+       |for(int $index = 0; $index < ${broadcastRelationVar}.length; ++$index) {
+       |  InternalRow $broadcastRow = ${broadcastRelationVar}[$index];
+       |  $joinConditionSkip
+       |  $numOutput.add(1);
+       |  ${consume(ctx, vars)}
+       |}
+     """.stripMargin
+  }
+
+  /**
+   * Currently there are equivalent codegen methods for the following existing methods:
+   * innerJoin, leftExistenceJoin.
+   * Not yet supported: outerJoin, existenceJoin, defaultJoin.
+   */
+  override def doConsume(ctx: CodegenContext, input: Seq[ExprCode], row: ExprCode): String = {
+    val broadcastRelation = broadcast.doExecuteBroadcast[Array[InternalRow]]()
+    val broadcastRelationVar = ctx.addReferenceObj("broadcast", broadcastRelation.value,
+      "InternalRow[]")
+    val broadcastRow = ctx.freshName("broadcastRow")
+    val broadcastVars = genBroadcastVars(ctx, broadcastRow)
+
+    ctx.copyResult = true
+    joinType match {
+      case _: InnerLike =>
+        codegenInner(ctx, broadcastRow, broadcastRelationVar, broadcastVars, input)
+      case LeftSemi =>
+        codegenLeftExistence(ctx, broadcastRow, broadcastRelationVar, broadcastVars, input, true)
+      case LeftAnti =>
+        codegenLeftExistence(ctx, broadcastRow, broadcastRelationVar, broadcastVars, input, false)
+      case x =>
+        sys.error(s"BroadcastNestedLoopJoin codegen does not support $x as the JoinType")
+    }
+  }
+
+  override def doProduce(ctx: CodegenContext): String = {
+    streamed.asInstanceOf[CodegenSupport].produce(ctx, this)
   }
 }

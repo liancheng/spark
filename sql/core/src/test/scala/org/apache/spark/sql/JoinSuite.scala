@@ -559,6 +559,23 @@ class JoinSuite extends QueryTest with SharedSQLContext {
           Row("1", 3, 2) ::
           Row("2", 3, 1) ::
           Row("2", 3, 2) :: Nil)
+
+      checkAnswer(
+        sql(
+          """
+            SELECT a, b FROM testData2 LEFT SEMI JOIN testData ON a > key
+ |          """.stripMargin),
+        Row(2, 1) ::
+          Row(2, 2) ::
+          Row(3, 1) ::
+          Row(3, 2) :: Nil)
+
+      checkAnswer(
+        sql(
+          """
+            SELECT a, b FROM testData2 LEFT ANTI JOIN testData ON a > key
+          """.stripMargin),
+        Row(1, 1) :: Row(1, 2) :: Nil)
     }
 
     sql("UNCACHE TABLE testData")
