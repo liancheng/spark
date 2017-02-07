@@ -23,7 +23,7 @@ import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-import org.apache.spark.{Partition => RDDPartition, TaskContext, TaskKilledException}
+import org.apache.spark.{Partition => RDDPartition, SynchronizedTaskContextImpl, TaskContext, TaskKilledException}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.rdd.{InputFileNameHolder, RDD}
 import org.apache.spark.sql.SparkSession
@@ -88,6 +88,15 @@ class FileScanRDD(
 
   override def compute(split: RDDPartition, context: TaskContext): Iterator[InternalRow] = {
     val iterator = new Iterator[Object] with AutoCloseable {
+      // Make sure we use a synchronized task context in Async IO mode.
+      private val asyncTaskContext: TaskContext = {
+        if (isAsyncIOEnabled) {
+          new SynchronizedTaskContextImpl(context)
+        } else {
+          context
+        }
+      }
+
       private val inputMetrics = context.taskMetrics().inputMetrics
       private val existingBytesRead = inputMetrics.bytesRead
 
@@ -192,18 +201,28 @@ class FileScanRDD(
       }
 
       private def prepareNextFile(): Future[NextFile] = {
-        val taskContext = TaskContext.get()
         if (files.hasNext) {
           Future {
-            // We need to make sure that reader registers its completion hooks with the
-            // correct TaskContext.
-            TaskContext.setTaskContext(taskContext)
-            val nextFile = files.next()
-            val nextFileIter = createNextIterator(nextFile)
+            // We need to synchronize on the task context to prevent the reader from being created
+            // while the task is shutting down. This is a problem for tasks that are completed
+            // without consuming all input. If we do not this, we could end up with resource leaks.
+            asyncTaskContext.synchronized {
+              if (asyncTaskContext.isCompleted()) {
+                // The task is already completed. Do not open a file.
+                null
+              } else {
+                // The task is running and the synchronization ensures that it cannot complete
+                // until the future has been fully constructed and the completion hooks have been
+                // added to the TaskContext.
+                TaskContext.setTaskContext(asyncTaskContext)
+                val nextFile = files.next()
+                val nextFileIter = createNextIterator(nextFile)
 
-            // Read something from the file to trigger some initial IO.
-            nextFileIter.hasNext
-            NextFile(nextFile, nextFileIter)
+                // Read something from the file to trigger some initial IO.
+                nextFileIter.hasNext
+                NextFile(nextFile, nextFileIter)
+              }
+            }
           }(FileScanRDD.ioExecutionContext)
         } else {
           null
