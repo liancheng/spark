@@ -8,8 +8,9 @@
  */
 package com.databricks.sql.acl
 
+import com.databricks.sql.DatabricksStaticSQLConf
+
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.internal.StaticSQLConf
 
 /**
  * The [[AclProvider]] provides the machinery to create an [[AclClient]]. An [[AclProvider]]
@@ -31,7 +32,7 @@ object AclProvider {
   def provider(session: SparkSession): AclProvider = {
     // Create a provider.
     try {
-      val name = session.conf.get(StaticSQLConf.ACL_PROVIDER.key)
+      val name = session.conf.get(DatabricksStaticSQLConf.ACL_PROVIDER.key)
       // scalastyle:off classforname
       Class.forName(name).newInstance().asInstanceOf[AclProvider]
       // scalastyle:on classforname

@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.execution
 
+import com.databricks.sql.DatabricksSQLConf
+
 import org.apache.spark.sql.ExperimentalMethods
 import org.apache.spark.sql.catalyst.catalog.SessionCatalog
 import org.apache.spark.sql.catalyst.expressions._
@@ -100,7 +102,7 @@ case class PartitionPruning(conf: SQLConf) extends Rule[LogicalPlan] with Predic
   }
 
   def apply(plan: LogicalPlan): LogicalPlan = {
-    if (!conf.partitionPruning) {
+    if (!conf.getConf(DatabricksSQLConf.DYNAMIC_PARTITION_PRUNING)) {
       return plan
     }
     plan transformUp {

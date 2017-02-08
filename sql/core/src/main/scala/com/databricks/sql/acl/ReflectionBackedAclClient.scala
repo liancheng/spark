@@ -8,15 +8,17 @@
  */
 package com.databricks.sql.acl
 
+import com.databricks.sql.DatabricksStaticSQLConf
+
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.internal.StaticSQLConf
 
 /**
  * This [[AclClient]] uses reflection to connect to a similar ACL Client on the databricks side.
  */
 class ReflectionBackedAclClient(session: SparkSession) extends AclClient {
   // scalastyle:off classforname
-  private val backendClazz = Class.forName(session.conf.get(StaticSQLConf.ACL_CLIENT_BACKEND.key))
+  private val backendClazz =
+    Class.forName(session.conf.get(DatabricksStaticSQLConf.ACL_CLIENT_BACKEND.key))
   // scalastyle:on classforname
 
   private[this] lazy val backend = backendClazz.newInstance()

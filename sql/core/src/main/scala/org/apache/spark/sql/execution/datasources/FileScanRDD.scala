@@ -23,6 +23,8 @@ import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
+import com.databricks.sql.DatabricksSQLConf
+
 import org.apache.spark.{Partition => RDDPartition, SynchronizedTaskContextImpl, TaskContext, TaskKilledException}
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.rdd.{InputFileNameHolder, RDD}
@@ -80,7 +82,7 @@ class FileScanRDD(
    * such as starting up connections to open the file and any initial buffering. The expectation
    * is that `currentIterator` is CPU intensive and `nextFile` is IO intensive.
    */
-  val isAsyncIOEnabled = sparkSession.sessionState.conf.filesAsyncIO
+  val isAsyncIOEnabled = sparkSession.sessionState.conf.getConf(DatabricksSQLConf.FILES_ASYNC_IO)
 
   case class NextFile(file: PartitionedFile, iter: Iterator[Object])
 

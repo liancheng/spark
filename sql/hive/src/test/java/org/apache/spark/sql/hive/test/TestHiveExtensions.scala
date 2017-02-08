@@ -17,15 +17,16 @@
 
 package org.apache.spark.sql.hive.test
 
+import com.databricks.sql.DatabricksStaticSQLConf
+
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.SparkFunSuite
-import org.apache.spark.sql.internal.StaticSQLConf
 
 class TestHiveExtensions(val extensions: SparkSessionExtensions => Unit)
     extends SparkFunSuite {
   private val hiveContext: TestHiveContext = {
     val sc = TestHive.sparkSession.sparkContext
-    sc.conf.set(StaticSQLConf.ACL_ENABLED.key, "true")
+    sc.conf.set(DatabricksStaticSQLConf.ACL_ENABLED.key, "true")
     new TestHiveContext(sc, extensions)
   }
 

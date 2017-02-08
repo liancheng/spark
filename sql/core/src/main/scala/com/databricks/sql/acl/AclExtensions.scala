@@ -10,11 +10,12 @@ package com.databricks.sql.acl
 
 import scala.util.control.NonFatal
 
+import com.databricks.sql.DatabricksStaticSQLConf
+
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalog.BaseCatalogHooks
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.internal.StaticSQLConf
 
 /**
  * Databricks Spark ACL configuration object. In order to use this, you will need to pass the
@@ -75,7 +76,7 @@ class AclExtensions extends (SparkSessionExtensions => Unit) {
    */
   private def isAclEnabled(session: SparkSession): Boolean = {
     try {
-      session.conf.get(StaticSQLConf.ACL_ENABLED.key, "false").toBoolean
+      session.conf.get(DatabricksStaticSQLConf.ACL_ENABLED.key, "false").toBoolean
     } catch {
       case NonFatal(_) => false
     }

@@ -443,12 +443,6 @@ object SQLConf {
     .booleanConf
     .createWithDefault(true)
 
-  val PARTITION_PRUNING = buildConf("spark.sql.dynamicPartitionPruning")
-    .internal()
-    .doc("When true, we will generate predicate for partition column when it's used as join key")
-    .booleanConf
-    .createWithDefault(true)
-
   val WHOLESTAGE_CODEGEN_ENABLED = buildConf("spark.sql.codegen.wholeStage")
     .internal()
     .doc("When true, the whole stage (of multiple operators) will be compiled into single java" +
@@ -489,12 +483,6 @@ object SQLConf {
       " bigger files (which is scheduled first).")
     .longConf
     .createWithDefault(4 * 1024 * 1024)
-
-  val FILES_ASYNC_IO = buildConf("spark.sql.files.asyncIO")
-    .internal()
-    .doc("If true, attempts to asynchronously do IO when reading data.")
-    .booleanConf
-    .createWithDefault(true)
 
   val IGNORE_CORRUPT_FILES = buildConf("spark.sql.files.ignoreCorruptFiles")
     .doc("Whether to ignore corrupt files. If true, the Spark jobs will continue to run when " +
@@ -736,8 +724,6 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
 
   def filesOpenCostInBytes: Long = getConf(FILES_OPEN_COST_IN_BYTES)
 
-  def filesAsyncIO: Boolean = getConf(FILES_ASYNC_IO)
-
   def ignoreCorruptFiles: Boolean = getConf(IGNORE_CORRUPT_FILES)
 
   def maxRecordsPerFile: Long = getConf(MAX_RECORDS_PER_FILE)
@@ -852,8 +838,6 @@ private[sql] class SQLConf extends Serializable with CatalystConf with Logging {
   override def runSQLonFile: Boolean = getConf(RUN_SQL_ON_FILES)
 
   def enableTwoLevelAggMap: Boolean = getConf(ENABLE_TWOLEVEL_AGG_MAP)
-
-  def partitionPruning: Boolean = getConf(PARTITION_PRUNING)
 
   def useObjectHashAggregation: Boolean = getConf(USE_OBJECT_HASH_AGG)
 
@@ -1051,25 +1035,5 @@ object StaticSQLConf {
       "implement Function1[SparkSessionExtension, Unit], and must have a no-args constructor.")
     .stringConf
     .createOptional
-
-  val ACL_PROVIDER = buildStaticConf("spark.databricks.acl.provider")
-    .internal()
-    .doc("Name of the AclProvider. This class is responsible for creating an AclClient. This " +
-      "class should implement the com.databricks.sql.acl.AclProvider trait and provide a " +
-      "no-args constructor.")
-    .stringConf
-    .createOptional
-
-  val ACL_CLIENT_BACKEND = buildStaticConf("spark.databricks.acl.client")
-    .internal()
-    .doc("Name of the ACL client backend used by the ReflectionBackedAclClient.")
-    .stringConf
-    .createOptional
-
-  val ACL_ENABLED = buildStaticConf("spark.databricks.acl.enabled")
-    .internal()
-    .doc("Whether the SQL-based Access Control is enabled.")
-    .booleanConf
-    .createWithDefault(false)
 
 }

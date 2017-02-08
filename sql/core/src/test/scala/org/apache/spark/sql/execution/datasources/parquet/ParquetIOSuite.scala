@@ -22,6 +22,7 @@ import scala.collection.mutable
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
+import com.databricks.sql.DatabricksSQLConf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
@@ -81,7 +82,7 @@ class ParquetIOSuite extends QueryTest with ParquetTest with SharedSQLContext {
 
   test("basic data types (without binary)") {
     (true :: false :: Nil).foreach { v =>
-      withSQLConf(SQLConf.FILES_ASYNC_IO.key -> v.toString) {
+      withSQLConf(DatabricksSQLConf.FILES_ASYNC_IO.key -> v.toString) {
         val data = (1 to 4).map { i =>
           (i % 2 == 0, i, i.toLong, i.toFloat, i.toDouble)
         }
