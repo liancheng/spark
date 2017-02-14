@@ -207,6 +207,17 @@ private[redshift] object Utils {
   }
 
   /**
+   * Escapes a string, so that it can be passed as literal within a Redshift SQL query.
+   */
+  def escapeRedshiftStringLiteral(s: String): String = {
+    // Note that one may expect here ' -> '' escaping be enough for string literals, but apparently
+    // backslashes also need to be escaped; otherwise a string literal ending in \ will cause
+    // Redshift to complain that the string is unterminated because it interprets the \ at the end
+    // as an escape character for the closing single-quote that follows it.
+    s.replace("\\", "\\\\").replace("'", "''")
+  }
+
+  /**
    * Compares two version strings, returning <0 for "lower", 0 for "equal" and >0 for "higher".
    *
    * Extracts all numbers from the given input strings and throws exception if the two resulting
