@@ -1010,7 +1010,6 @@ class SparkILoop(
       builder.getOrCreate()
     }
     sparkContext = sparkSession.sparkContext
-    Signaling.cancelOnInterrupt(sparkContext)
     sparkSession
   }
 

@@ -388,6 +388,9 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
       }
     }
 
+    // Specifying an ending offset
+    testBadOptions("endingOffsets" -> "latest")("Ending offset not valid in streaming queries")
+
     // No strategy specified
     testBadOptions()("options must be specified", "subscribe", "subscribePattern")
 
@@ -588,35 +591,6 @@ class KafkaSourceSuite extends KafkaSourceTest with PrivateMethodTester with Moc
       assert(!source.invokePrivate(canReuse(4)),
         "Can't re-use because there are more Spark partitions than Kafka")
     }
-  }
-
-  test("close KafkaConsumers when reuseCachedConsumers = false") {
-    val consumer = mock[CachedKafkaConsumer]
-    class MockKafkaRDD(reuse: Boolean) extends KafkaSourceRDD(spark.sparkContext,
-      new JavaMap[String, Object](), Nil, 0, failOnDataLoss = true, reuse) {
-
-      override protected def getOrCreateKafkaConsumer(
-          topic: String,
-          partition: Int,
-          kafkaParams: java.util.Map[String, Object],
-          reuseCachedConsumers: Boolean): CachedKafkaConsumer = consumer
-    }
-    val tc = mock[TaskContext]
-
-    val rdd1 = new MockKafkaRDD(reuse = false)
-    val tp1 = new TopicPartition("some-topic", 1)
-    val part = KafkaSourceRDDPartition(0, KafkaSourceRDDOffsetRange(tp1, 1L, 5L, None))
-    val iter1 = rdd1.compute(part, tc)
-    verify(tc).addTaskCompletionListener(any[(TaskContext) => Unit]())
-    assert(!iter1.hasNext)
-    verify(consumer).close()
-
-    reset(tc, consumer)
-    val rdd2 = new MockKafkaRDD(reuse = true)
-    val iter2 = rdd2.compute(part, tc)
-    verify(tc, never()).addTaskCompletionListener(any[(TaskContext) => Unit]())
-    assert(!iter2.hasNext)
-    verify(consumer, never()).close()
   }
 
   test("delete a topic when a Spark job is running") {
