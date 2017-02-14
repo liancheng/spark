@@ -152,35 +152,41 @@ abstract class OrcSuite extends QueryTest with TestHiveSingleton with BeforeAndA
     assert(new OrcOptions(Map("Orc.Compress" -> "NONE")).compressionCodec == "NONE")
   }
 
-  test("SPARK-18220: read Hive orc table with varchar column") {
+  test("SPARK-19459/SPARK-18220: read char/varchar column written by Hive") {
     val hiveClient = HiveUtils.getHiveClient(spark.sharedState)
+    val location = Utils.createTempDir()
+    val uri = location.toURI
     try {
-      hiveClient.runSqlHive("CREATE TABLE orc_varchar(a VARCHAR(10)) STORED AS orc")
-      hiveClient.runSqlHive("INSERT INTO TABLE orc_varchar SELECT 'a' FROM (SELECT 1) t")
-      checkAnswer(spark.table("orc_varchar"), Row("a"))
-    } finally {
-      hiveClient.runSqlHive("DROP TABLE IF EXISTS orc_varchar")
-    }
-  }
+      hiveClient.runSqlHive(
+        """
+           |CREATE EXTERNAL TABLE hive_orc(
+           |  a STRING,
+           |  b CHAR(10),
+           |  c VARCHAR(10))
+           |STORED AS orc""".stripMargin)
+      // Hive throws an exception if I assign the location in the create table statement.
+      hiveClient.runSqlHive(
+        s"ALTER TABLE hive_orc SET LOCATION '$uri'")
+      hiveClient.runSqlHive(
+        "INSERT INTO TABLE hive_orc SELECT 'a', 'b', 'c' FROM (SELECT 1) t")
 
-  test("read varchar column from orc tables created by hive") {
-    try {
-      // This is an ORC file with a single VARCHAR(10) column that's created using Hive 1.2.1
-      val hiveOrc = new File(Thread.currentThread().getContextClassLoader
-        .getResource(s"data/files/orc/").getFile).toURI
-      sql(
+      // We create a different table in Spark using the same schema which points to
+      // the same location.
+      spark.sql(
         s"""
-          |CREATE EXTERNAL TABLE test_hive_orc(
-          |  a STRING,
-          |  b CHAR(10),
-          |  c VARCHAR(10)
-          |)
-          |STORED AS ORC
-          |LOCATION '$hiveOrc'
-        """.stripMargin)
-      checkAnswer(spark.table("test_hive_orc"), Row("a", "b         ", "c"))
+           |CREATE EXTERNAL TABLE spark_orc(
+           |  a STRING,
+           |  b CHAR(10),
+           |  c VARCHAR(10))
+           |STORED AS orc
+           |LOCATION '$uri'""".stripMargin)
+      val result = Row("a", "b         ", "c")
+      checkAnswer(spark.table("hive_orc"), result)
+      checkAnswer(spark.table("spark_orc"), result)
     } finally {
-      sql("DROP TABLE IF EXISTS test_hive_orc")
+      hiveClient.runSqlHive("DROP TABLE IF EXISTS hive_orc")
+      hiveClient.runSqlHive("DROP TABLE IF EXISTS spark_orc")
+      Utils.deleteRecursively(location)
     }
   }
 }
