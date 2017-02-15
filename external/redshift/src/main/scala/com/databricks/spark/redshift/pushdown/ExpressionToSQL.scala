@@ -15,8 +15,13 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.types._
 
-
-private[pushdown] class ExpressionToSqlConverter(fields: Seq[Attribute]) {
+/**
+ * Converter class to be used for turning a Catalyst `Expression` into a piece of SQL text
+ * that Redshift can digest.
+ *
+ * @param fields a set of "context" attributes to be used when resolving `AttributeReference`s
+ */
+private[pushdown] class ExpressionToSQL(fields: Seq[Attribute]) {
   type ExpressionToSqlPF = PartialFunction[Expression, String]
 
   private val literalExprs: ExpressionToSqlPF = {
@@ -202,11 +207,11 @@ private[pushdown] class ExpressionToSqlConverter(fields: Seq[Attribute]) {
 
 private[pushdown] object ExpressionToSQL {
   /**
-   * Helper function that instantiates an `ExpressionToSqlConverter` object
+   * Helper function that instantiates an `ExpressionToSQL` converter object
    * and calls its `convertExpression()` method with the provided arguments.
    */
   def convert(expr: Expression, fields: Seq[Attribute]): String = {
-    val converter = new ExpressionToSqlConverter(fields)
+    val converter = new ExpressionToSQL(fields)
     converter.convertExpression(expr)
   }
 }

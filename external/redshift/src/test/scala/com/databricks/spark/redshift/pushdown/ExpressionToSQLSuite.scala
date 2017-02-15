@@ -19,7 +19,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.types._
 
 
-class ExpressionToSqlSuite extends SparkFunSuite {
+class ExpressionToSQLSuite extends SparkFunSuite {
   def testExpr(expr: Expression, fields: Seq[Attribute], expected: String): Unit =
     assertResult(expected)(ExpressionToSQL.convert(expr, fields))
 
