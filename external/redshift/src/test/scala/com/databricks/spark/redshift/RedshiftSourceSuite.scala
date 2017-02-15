@@ -258,12 +258,12 @@ class RedshiftSourceSuite
     val expectedQuery = (
       "UNLOAD \\('SELECT \"testbyte\", \"testbool\" " +
         "FROM \"PUBLIC\".\"test_table\" " +
-        "WHERE \"testbool\" = true " +
-        "AND \"teststring\" = \\\\'Unicode\\\\'\\\\'s樂趣\\\\' " +
-        "AND \"testdouble\" > 1000.0 " +
-        "AND \"testdouble\" < 1.7976931348623157E308 " +
-        "AND \"testfloat\" >= 1.0 " +
-        "AND \"testint\" <= 43'\\) " +
+        "WHERE \\(\"testbool\" = true\\) " +
+        "AND \\(\"teststring\" = \\\\'Unicode\\\\'\\\\'s樂趣\\\\'\\) " +
+        "AND \\(\"testdouble\" > 1000.0\\) " +
+        "AND \\(\"testdouble\" < 1.7976931348623157E308\\) " +
+        "AND \\(\"testfloat\" >= 1.0\\) " +
+        "AND \\(\"testint\" <= 43\\)'\\) " +
       "TO '.*' " +
       "WITH CREDENTIALS 'aws_access_key_id=test1;aws_secret_access_key=test2' " +
       "ESCAPE").r

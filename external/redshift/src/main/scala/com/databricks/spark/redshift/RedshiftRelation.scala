@@ -15,6 +15,7 @@ import com.amazonaws.auth.AWSCredentialsProvider
 import com.amazonaws.services.s3.AmazonS3Client
 import com.databricks.spark.redshift.Parameters.MergedParameters
 import com.databricks.spark.redshift.Utils.escapeJdbcString
+import com.databricks.spark.redshift.pushdown.FilterPushdown
 import org.json4s.{DefaultFormats, JValue, StreamInput}
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.JsonMethods

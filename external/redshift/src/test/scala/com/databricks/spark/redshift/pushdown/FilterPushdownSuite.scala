@@ -7,13 +7,13 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
-package com.databricks.spark.redshift
+package com.databricks.spark.redshift.pushdown
 
-import com.databricks.spark.redshift.FilterPushdown._
+import com.databricks.spark.redshift.pushdown.FilterPushdown._
 
+import org.apache.spark.SparkFunSuite
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.SparkFunSuite
 
 class FilterPushdownSuite extends SparkFunSuite {
   test("buildWhereClause with empty list of filters") {
@@ -26,14 +26,14 @@ class FilterPushdownSuite extends SparkFunSuite {
 
   test("buildWhereClause with with some filters that cannot be pushed down") {
     val whereClause = buildWhereClause(testSchema, Seq(EqualTo("test_int", 1), NewFilter))
-    assert(whereClause === """WHERE "test_int" = 1""")
+    assert(whereClause === """WHERE ("test_int" = 1)""")
   }
 
   test("buildWhereClause with string literals that contain Unicode characters") {
     // scalastyle:off
     val whereClause = buildWhereClause(testSchema, Seq(EqualTo("test_string", "Unicode's樂趣")))
     // Here, the apostrophe in the string needs to be replaced with two single quotes, ''.
-    assert(whereClause === """WHERE "test_string" = 'Unicode''s樂趣'""")
+    assert(whereClause === """WHERE ("test_string" = 'Unicode''s樂趣')""")
     // scalastyle:on
   }
 
@@ -53,14 +53,14 @@ class FilterPushdownSuite extends SparkFunSuite {
     // scalastyle:off
     val expectedWhereClause =
       """
-        |WHERE "test_bool" = true
-        |AND "test_string" = 'Unicode是樂趣'
-        |AND "test_double" > 1000.0
-        |AND "test_double" < 1.7976931348623157E308
-        |AND "test_float" >= 1.0
-        |AND "test_int" <= 43
-        |AND "test_int" IS NOT NULL
-        |AND "test_int" IS NULL
+        |WHERE ("test_bool" = true)
+        |AND ("test_string" = 'Unicode是樂趣')
+        |AND ("test_double" > 1000.0)
+        |AND ("test_double" < 1.7976931348623157E308)
+        |AND ("test_float" >= 1.0)
+        |AND ("test_int" <= 43)
+        |AND ("test_int" IS NOT NULL)
+        |AND ("test_int" IS NULL)
       """.stripMargin.lines.mkString(" ").trim
     // scalastyle:on
     assert(whereClause === expectedWhereClause)

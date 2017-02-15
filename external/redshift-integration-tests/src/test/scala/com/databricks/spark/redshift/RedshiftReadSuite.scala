@@ -143,11 +143,11 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
         """
           |select testbyte, testbool
           |from test_table
-          |where testbool = true
-          | and teststring = "Unicode's樂趣"
-          | and testdouble = 1234152.12312498
-          | and testfloat = 1.0
-          | and testint = 42
+          |where (testbool = true)
+          | and (teststring = "Unicode's樂趣")
+          | and (testdouble = 1234152.12312498)
+          | and (testfloat = 1.0)
+          | and (testint = 42)
         """.stripMargin),
       Seq(Row(1, true)))
     // scalastyle:on
@@ -155,7 +155,7 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
 
   test("RedshiftRelation implements Spark 1.6+'s unhandledFilters API") {
     assume(org.apache.spark.SPARK_VERSION.take(3) >= "1.6")
-    val df = sqlContext.sql("select testbool from test_table where testbool = true")
+    val df = sqlContext.sql("select testbool from test_table where (testbool = true)")
     val physicalPlan = df.queryExecution.sparkPlan
     physicalPlan.collectFirst { case f: execution.FilterExec => f }.foreach { filter =>
       fail(s"Filter should have been eliminated:\n${df.queryExecution}")
@@ -244,68 +244,68 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
 
   test("properly escape literals in filter pushdown (SC-5504)") {
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where testint = 4141214"),
+      sqlContext.sql("select count(1) from test_table where (testint = 4141214)"),
       Seq(Row(1))
     )
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where testint = 7"),
+      sqlContext.sql("select count(1) from test_table where (testint = 7)"),
       Seq(Row(0))
     )
     checkAnswer(
-      sqlContext.sql("select testint from test_table where testint = 42"),
+      sqlContext.sql("select testint from test_table where (testint = 42)"),
       Seq(Row(42), Row(42))
     )
 
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where teststring = 'asdf'"),
+      sqlContext.sql("select count(1) from test_table where (teststring = 'asdf')"),
       Seq(Row(1))
     )
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where teststring = 'alamakota'"),
+      sqlContext.sql("select count(1) from test_table where (teststring = 'alamakota')"),
       Seq(Row(0))
     )
     checkAnswer(
-      sqlContext.sql("select teststring from test_table where teststring = 'asdf'"),
+      sqlContext.sql("select teststring from test_table where (teststring = 'asdf')"),
       Seq(Row("asdf"))
     )
 
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where teststring = 'a\\'b'"),
+      sqlContext.sql("select count(1) from test_table where (teststring = 'a\\'b')"),
       Seq(Row(0))
     )
     checkAnswer(
-      sqlContext.sql("select teststring from test_table where teststring = 'a\\'b'"),
+      sqlContext.sql("select teststring from test_table where (teststring = 'a\\'b')"),
       Seq()
     )
 
     // scalastyle:off
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where teststring = 'Unicode\\'s樂趣'"),
+      sqlContext.sql("select count(1) from test_table where (teststring = 'Unicode\\'s樂趣')"),
       Seq(Row(1))
     )
     checkAnswer(
-      sqlContext.sql("select teststring from test_table where teststring = \"Unicode's樂趣\""),
+      sqlContext.sql("select teststring from test_table where (teststring = \"Unicode's樂趣\")"),
       Seq(Row("Unicode's樂趣"))
     )
     // scalastyle:on
 
     checkAnswer(
-      sqlContext.sql("select count(1) from test_table where teststring = 'a\\\\b'"),
+      sqlContext.sql("select count(1) from test_table where (teststring = 'a\\\\b')"),
       Seq(Row(0))
     )
     checkAnswer(
-      sqlContext.sql("select teststring from test_table where teststring = 'a\\\\b'"),
+      sqlContext.sql("select teststring from test_table where (teststring = 'a\\\\b')"),
       Seq()
     )
 
     checkAnswer(
       sqlContext.sql(
-        "select count(1) from test_table where teststring = 'Ba\\\\ckslash\\\\'"),
+        "select count(1) from test_table where (teststring = 'Ba\\\\ckslash\\\\')"),
       Seq(Row(1))
     )
     checkAnswer(
       sqlContext.sql(
-        "select teststring from test_table where teststring = \"Ba\\\\ckslash\\\\\""),
+        "select teststring from test_table where (teststring = \"Ba\\\\ckslash\\\\\")"),
       Seq(Row("Ba\\ckslash\\"))
     )
   }
