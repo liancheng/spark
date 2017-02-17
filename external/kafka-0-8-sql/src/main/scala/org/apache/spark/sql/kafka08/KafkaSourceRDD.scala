@@ -30,7 +30,8 @@ import java.{util => ju}
 import scala.collection.mutable.ArrayBuffer
 
 import kafka.api.{FetchRequestBuilder, FetchResponse}
-import kafka.common.{ErrorMapping, TopicAndPartition}
+import kafka.common._
+import kafka.consumer.SimpleConsumer
 import kafka.message.MessageAndOffset
 
 import org.apache.spark.{Partition, SparkContext, TaskContext}
@@ -70,7 +71,9 @@ private[kafka08] case class KafkaSourceRDDPartition(
 private[kafka08] class KafkaSourceRDD(
     sc: SparkContext,
     kafkaParams: ju.Map[String, String],
-    offsetRanges: Seq[KafkaSourceRDDOffsetRange]) extends RDD[InternalRow](sc, Nil) with Logging {
+    offsetRanges: Seq[KafkaSourceRDDOffsetRange],
+    maxOffsetFetchAttempts: Int,
+    offsetFetchAttemptIntervalMs: Long) extends RDD[InternalRow](sc, Nil) with Logging {
 
   override def getPartitions: Array[Partition] = {
     offsetRanges.zipWithIndex.map { case (o, i) => new KafkaSourceRDDPartition(i, o) }.toArray
@@ -146,31 +149,59 @@ private[kafka08] class KafkaSourceRDD(
 
     private val topicUTF8 = UTF8String.fromString(range.topic)
     private val kc = new KafkaCluster(kafkaParams)
-    private val consumer = kc.connectLeader(range.topic, range.partition)
+    private val consumer = withRetries {
+      kc.connectLeader(range.topic, range.partition)
+    }
+
     private var requestOffset = range.fromOffset
     private var iter: Iterator[MessageAndOffset] = null
 
-    private def handleFetchErr(resp: FetchResponse): Unit = {
-      if (resp.hasError) {
-        val err = resp.errorCode(range.topic, range.partition)
-        if (err == ErrorMapping.LeaderNotAvailableCode ||
-          err == ErrorMapping.NotLeaderForPartitionCode) {
-          logError(s"Lost leader for topic ${range.topic} partition ${range.partition}, " +
-            s" sleeping for ${kc.config.refreshLeaderBackoffMs}ms")
-          Thread.sleep(kc.config.refreshLeaderBackoffMs)
-          // Let normal rdd retry sort out reconnect attempts
-          throw ErrorMapping.exceptionFor(err)
+    /**
+     * Run `body` and retry upon `LeaderNotAvailableException`, `NotLeaderForPartitionException` or
+     * `ReplicaNotAvailableException`.
+     */
+    private def withRetries[T](body: => T): T = {
+      var result: Option[T] = None
+      var attempt = 1
+      var lastException: Throwable = null
+      while (result.isEmpty && attempt <= maxOffsetFetchAttempts) {
+        try {
+          result = Some(body)
+        } catch {
+          case e@(_: LeaderNotAvailableException |
+                  _: NotLeaderForPartitionException |
+                  _: ReplicaNotAvailableException) =>
+            lastException = e
+            logWarning(s"Error in attempt $attempt connecting to Kafka: ", e)
+            attempt += 1
+            Thread.sleep(offsetFetchAttemptIntervalMs)
         }
       }
+      if (Thread.interrupted()) {
+        throw new InterruptedException()
+      }
+      if (result.isEmpty) {
+        assert(attempt > maxOffsetFetchAttempts)
+        assert(lastException != null)
+        throw lastException
+      }
+      result.get
     }
 
     private def fetchBatch: Iterator[MessageAndOffset] = {
       val req = new FetchRequestBuilder()
         .addFetch(range.topic, range.partition, requestOffset, kc.config.fetchMessageMaxBytes)
         .build()
-      val resp = consumer.fetch(req)
-      assert(resp.data.size == 1)
-      handleFetchErr(resp)
+      val resp = withRetries {
+        val _resp = consumer.fetch(req)
+        assert(_resp.data.size == 1)
+        if (_resp.hasError) {
+          val err = _resp.errorCode(range.topic, range.partition)
+          throw ErrorMapping.exceptionFor(err)
+        }
+        _resp
+      }
+
       // kafka may return a batch that starts before the requested offset
       resp.messageSet(range.topic, range.partition)
         .iterator
@@ -188,16 +219,30 @@ private[kafka08] class KafkaSourceRDD(
         iter = fetchBatch
       }
       if (!iter.hasNext) {
-        assert(requestOffset == range.untilOffset)
+        if (requestOffset != range.untilOffset) {
+          throw new IllegalStateException(
+            s"Cannot fetch records in [$requestOffset, ${range.untilOffset}) for "
+              + s"${range.topicPartition}")
+        }
         finished = true
         null
       } else {
         val item = iter.next()
         if (item.offset >= range.untilOffset) {
-          assert(item.offset == range.untilOffset)
+          if (item.offset != range.untilOffset) {
+            throw new IllegalStateException(
+              s"Cannot fetch records in [${range.untilOffset}, ${item.offset}) for "
+                + s"${range.topicPartition}")
+          }
           finished = true
           null
         } else {
+          if (requestOffset != item.offset) {
+            assert(requestOffset < item.offset) // guaranteed by "fetchBatch"
+            throw new IllegalStateException(
+              s"Cannot fetch records in [$requestOffset, ${item.offset}) for "
+                + s"${range.topicPartition}")
+          }
           requestOffset = item.nextOffset
           createInternalRow(item)
         }

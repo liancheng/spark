@@ -64,10 +64,8 @@ private[kafka08] class KafkaSource(
   private val maxOffsetFetchAttempts =
     sourceOptions.getOrElse("fetchOffset.numRetries", "3").toInt
 
-  private val offsetFetchAttemptIntervalMs = math.max(
-    sourceOptions.getOrElse("fetchOffset.retryIntervalMs", "1000").toLong,
-    // Also respect "refreshLeaderBackoffMs" as the failure may be LeaderNotAvailableException
-    kc.config.refreshLeaderBackoffMs)
+  private val offsetFetchAttemptIntervalMs =
+    sourceOptions.getOrElse("fetchOffset.retryIntervalMs", "1000").toLong
 
   private val maxOffsetsPerTrigger =
     sourceOptions.get("maxOffsetsPerTrigger").map(_.toLong)
@@ -233,7 +231,9 @@ private[kafka08] class KafkaSource(
     val rdd = new KafkaSourceRDD(
       sc,
       kafkaParams,
-      offsetRanges)
+      offsetRanges,
+      maxOffsetFetchAttempts,
+      offsetFetchAttemptIntervalMs)
 
     logInfo("GetBatch generating RDD of offset range: " +
       offsetRanges.sortBy(_.topicPartition.toString).mkString(", "))
