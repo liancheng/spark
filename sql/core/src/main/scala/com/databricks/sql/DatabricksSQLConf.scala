@@ -29,6 +29,18 @@ object DatabricksSQLConf {
     .booleanConf
     .createWithDefault(true)
 
+  /**
+   * Use an optimizer rule doing advanced query pushdown into Redshift.
+   *
+   * The rule is injected into extraOptimizations of the [[org.apache.spark.sql.SparkSession]]
+   * the first time a RedshiftRelation is constructed.
+   */
+  val REDSHIFT_ADVANCED_PUSHDOWN = buildConf("spark.databricks.redshift.pushdown")
+    .internal()
+    .doc("When true, advanced query pushdown into Redshift is used.")
+    .booleanConf
+    .createWithDefault(true)
+
 }
 
 

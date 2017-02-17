@@ -14,13 +14,16 @@ import java.util.UUID
 
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
-import scala.util.matching.Regex
 
 import com.amazonaws.services.s3.{AmazonS3Client, AmazonS3URI}
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration
+import com.databricks.spark.redshift.pushdown.RedshiftPushdown
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
 import org.slf4j.LoggerFactory
+
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.execution.datasources.LogicalRelation
 
 /**
  * Various arbitrary helper functions
@@ -28,6 +31,20 @@ import org.slf4j.LoggerFactory
 private[redshift] object Utils {
 
   private val log = LoggerFactory.getLogger(getClass)
+
+  /**
+   * Inject more advanced query pushdown rule to Redshift into Spark optimizer.
+   *
+   * This is invoked in the constructor of a RedshiftRelation node, so it will get injected
+   * into the optimizer the first time a query using redshift is invoked in the session.
+   *
+   * @param session The SparkSession for which pushdown are to be enabled.
+   */
+  def injectRedshiftPushdownRule(session: SparkSession): Unit = {
+    if (!session.experimental.extraOptimizations.exists(_.isInstanceOf[RedshiftPushdown])) {
+      session.experimental.extraOptimizations ++= Seq(RedshiftPushdown(session))
+    }
+  }
 
   def classForName(className: String): Class[_] = {
     val classLoader =
@@ -108,6 +125,33 @@ private[redshift] object Utils {
   def makeTempPath(tempRoot: String): String = {
     lastTempPathGenerated = Utils.joinUrls(tempRoot, UUID.randomUUID().toString)
     lastTempPathGenerated
+  }
+
+  /**
+   * Verifies that the Redshift region and S3 region are the same,
+   * so that the UNLOAD operation can succeed.
+   *
+   * It only logs an informative error message if that is not the case; does not throw an exception.
+   */
+  def checkThatRedshiftAndS3RegionsAreTheSame(
+      jdbcURL: String,
+      tempDir: String,
+      s3Client: AmazonS3Client): Unit = {
+    for (
+      redshiftRegion <- Utils.getRegionForRedshiftCluster(jdbcURL);
+      s3Region <- Utils.getRegionForS3Bucket(tempDir, s3Client)
+    ) {
+      if (redshiftRegion != s3Region) {
+        // We don't currently support `extraunloadoptions`, so even if Amazon _did_ add a `region`
+        // option for this we wouldn't be able to pass in the new option. However, we choose to
+        // err on the side of caution and don't throw an exception because we don't want to break
+        // existing workloads in case the region detection logic is wrong.
+        log.error("The Redshift cluster and S3 bucket are in different regions " +
+          s"($redshiftRegion and $s3Region, respectively). Redshift's UNLOAD command requires " +
+          s"that the Redshift cluster and Amazon S3 bucket be located in the same region, so " +
+          s"this read will fail.")
+      }
+    }
   }
 
   /**
@@ -218,6 +262,77 @@ private[redshift] object Utils {
   }
 
   /**
+   * Returns the Select SQL statement executed by the first `RedshiftRelation` in the given `df`
+   * if any, or else `None`.
+   */
+  def getFirstSelect(df: DataFrame): Option[String] = {
+    val redshiftRelation = df.queryExecution.optimizedPlan.collectFirst {
+      case LogicalRelation(relation: RedshiftRelation, _, _) => relation
+    }
+    redshiftRelation.flatMap(_.selectStatement)
+  }
+
+  /**
+   * Removes sensitive content from a query string
+   */
+  def sanitizeQueryText(q: String): String = {
+    "<SANITIZED> " + q.replaceAll("(aws_access_key_id|aws_secret_access_key)=[^;']+", "$1=#####")
+  }
+
+  /**
+   * This takes a query in the shape produced by RedshiftPlanBuilder and
+   * performs the necessary indentation for pretty printing.
+   *
+   * @note This is only meant for logging and debugging. Its output (a pretty printed query)
+   *       is not to be sent to execution.
+   *
+   * Warning: This is a hacky implementation that isn't very 'functional' at all.
+   * In fact, it's quite imperative.
+   */
+  def prettyPrint(query: String): String = {
+    log.debug(s"""Attempting to prettify query $query...""")
+
+    val opener = "\\(SELECT"
+    val closer = "\\) AS \\\"subquery_[0-9]{1,10}\\\""
+
+    val breakPoints = "(" + "(?=" + opener + ")" + "|" + "(?=" + closer + ")" +
+      "|" + "(?<=" + closer + ")" + ")"
+
+    var remainder = query
+    var indent = 0
+
+    val str = new StringBuilder
+    var inSuffix: Boolean = false
+
+    while (remainder.length > 0) {
+      val prefix = "\n" + "\t" * indent
+      val parts = remainder.split(breakPoints, 2)
+      str.append(prefix + parts.head)
+
+      if (parts.length >= 2 && parts.last.length > 0) {
+        val n: Char = parts.last.head
+
+        if (n == '(') {
+          indent += 1
+        } else {
+
+          if (!inSuffix) {
+            indent -= 1
+            inSuffix = true
+          }
+
+          if (n == ')') {
+            inSuffix = false
+          }
+        }
+        remainder = parts.last
+      } else remainder = ""
+    }
+
+    str.toString()
+  }
+
+  /**
    * Compares two version strings, returning <0 for "lower", 0 for "equal" and >0 for "higher".
    *
    * Extracts all numbers from the given input strings and throws exception if the two resulting
@@ -236,3 +351,9 @@ private[redshift] object Utils {
     (vals1 zip vals2) collectFirst { case (v1, v2) if v1 != v2 => v1 - v2} getOrElse 0
   }
 }
+
+/**
+ * Thrown when something goes wrong in an unexpected way in the Redshift Connector related code.
+ * Most likely means that there is a bug. Should not be caused by user errors.
+ */
+class RedshiftConnectorException(message: String) extends RuntimeException(message)

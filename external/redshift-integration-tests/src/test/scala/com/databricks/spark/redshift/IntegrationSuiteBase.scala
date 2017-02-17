@@ -14,6 +14,7 @@ import java.sql.Connection
 
 import scala.util.Random
 
+import com.databricks.sql.DatabricksSQLConf
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.fs.s3native.NativeS3FileSystem
@@ -64,6 +65,8 @@ trait IntegrationSuiteBase
 
   protected val tempDir: String = AWS_S3_SCRATCH_SPACE + randomSuffix + "/"
 
+  protected val createSqlContextBeforeEach = true
+
   /**
    * Spark Context with Hadoop file overridden to point at our local test data file for this suite,
    * no-matter what temp directory was generated and requested.
@@ -71,6 +74,17 @@ trait IntegrationSuiteBase
   protected var sc: SparkContext = _
   protected var sqlContext: SQLContext = _
   protected var conn: Connection = _
+  protected var sparkSession: SparkSession = _
+
+  def runSql(query: String): Unit = {
+    log.debug("RUNNING: " + Utils.sanitizeQueryText(query))
+    sqlContext.sql(query).collect()
+  }
+
+  def jdbcUpdate(query: String): Unit = {
+    log.debug("RUNNING: " + Utils.sanitizeQueryText(query))
+    conn.createStatement.executeUpdate(query)
+  }
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -111,7 +125,10 @@ trait IntegrationSuiteBase
 
   override protected def beforeEach(): Unit = {
     super.beforeEach()
-    sqlContext = new TestHiveContext(sc, loadTestTables = false)
+    if (createSqlContextBeforeEach) {
+      sqlContext = new TestHiveContext(sc, loadTestTables = false)
+      sparkSession = sqlContext.sparkSession
+    }
   }
 
   /**
@@ -176,6 +193,96 @@ trait IntegrationSuiteBase
       conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
       conn.commit()
     }
+  }
+
+  /**
+   * Runs `df` twice, once with Basic Filter Pushdown and once with Advanced Pushdown enabled.
+   * Uses `checkAnswer()` to compare both results to the `expectedAnswer`
+   *
+   * @return A pair of SQL statements produced by the basic and advanced pushdown code paths.
+   */
+  def checkAnswerPushdown(df: DataFrame, expectedAnswer: Seq[Row]): (String, String) = {
+    def check(advancedPushdown: Boolean): String = {
+      if (advancedPushdown) {
+        enablePushdownSession(df.sparkSession)
+      } else {
+        disablePushdownSession(df.sparkSession)
+      }
+      // We put an alias on top to trigger full re-execution of the whole df.
+      val aliasedDF = df.as(s"AdvancedPD_$advancedPushdown")
+      checkAnswer(aliasedDF, expectedAnswer)
+      val firstSelect = Utils.getFirstSelect(aliasedDF)
+      assert(firstSelect.isDefined)
+      firstSelect.get
+    }
+    (check(advancedPushdown = false), check(advancedPushdown = true))
+  }
+
+  /**
+   * Verify that the pushdown was done by looking at the generated SQL,
+   * and check the results are as expected
+   */
+  def testPushdownDF(result: DataFrame, refResult: Seq[Row],
+      refBasicSQL: Option[String] = None,
+      refFullSQL: Option[String] = None): Unit = {
+    val (basicSQL, fullSQL) = checkAnswerPushdown(result, refResult)
+
+    def cleanupSQL(sql: String): String =
+      Utils.prettyPrint(sql.trim.replaceAll(s"_$randomSuffix|\\s+", " ")
+        // FIXME: Order of cols is nondeterministic. See SC-5957.
+        .replaceFirst(s"(?ims)(SELECT )(.*)( FROM)", "$1 FIXME $3")
+      )
+
+    def checkSQL(sql: String, refSQL: String): Unit = {
+      val generatedClean = cleanupSQL(sql)
+      val referenceClean = cleanupSQL(refSQL)
+      val generatedNoWS = generatedClean.replaceAll("\\s", "")
+      val referenceNoWS = referenceClean.replaceAll("\\s", "")
+      if (generatedNoWS != referenceNoWS) {
+        // scalastyle:off println
+        println(
+          s"""
+             |>>> GENERATED QUERY:
+             |$generatedClean
+             |
+             |>>> REFERENCE QUERY:
+             |$referenceClean
+             |
+           """.stripMargin
+        )
+        disablePushdownSession(result.sparkSession)
+        println(">>> Explain (disablePushdown):")
+        result.explain(true)
+        enablePushdownSession(result.sparkSession)
+        println(">>> Explain (enablePushdown):")
+        result.explain(true)
+        // scalastyle:on println
+
+        assertResult(referenceNoWS)(generatedNoWS)
+      }
+    }
+
+    if (refBasicSQL.isDefined) {
+      checkSQL(basicSQL, refBasicSQL.get)
+    }
+    if (refFullSQL.isDefined) {
+      checkSQL(fullSQL, refFullSQL.get)
+    }
+  }
+
+  def testPushdownSQL(sql: String, refResult: Seq[Row],
+      refBasicSQL: Option[String] = None,
+      refFullSQL: Option[String] = None): Unit = {
+    val result = sparkSession.sql(sql)
+    testPushdownDF(result, refResult, refBasicSQL, refFullSQL)
+  }
+
+  def enablePushdownSession(session: SparkSession): Unit = {
+    session.conf.set(DatabricksSQLConf.REDSHIFT_ADVANCED_PUSHDOWN.key, true)
+  }
+
+  def disablePushdownSession(session: SparkSession): Unit = {
+    session.conf.set(DatabricksSQLConf.REDSHIFT_ADVANCED_PUSHDOWN.key, false)
   }
 
   /**

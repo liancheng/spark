@@ -138,7 +138,7 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
 
   test("query with pruned and filtered scans") {
     // scalastyle:off
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql(
         """
           |select testbyte, testbool
@@ -166,22 +166,22 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
     val date = TestUtils.toDate(year = 2015, zeroBasedMonth = 6, date = 3)
     val df = sqlContext.sql("select testdate from test_table")
 
-    checkAnswer(df.filter(df("testdate") === date), Seq(Row(date)))
+    checkAnswerPushdown(df.filter(df("testdate") === date), Seq(Row(date)))
     // This query failed in Spark 1.6.0 but not in earlier versions. It looks like 1.6.0 performs
     // constant-folding, whereas earlier Spark versions would preserve the cast which prevented
     // filter pushdown.
-    checkAnswer(df.filter("testdate = to_date('2015-07-03')"), Seq(Row(date)))
+    checkAnswerPushdown(df.filter("testdate = to_date('2015-07-03')"), Seq(Row(date)))
   }
 
   test("filtering based on timestamp constants (regression test for #152)") {
     val timestamp = TestUtils.toTimestamp(2015, zeroBasedMonth = 6, 1, 0, 0, 0, 1)
     val df = sqlContext.sql("select testtimestamp from test_table")
 
-    checkAnswer(df.filter(df("testtimestamp") === timestamp), Seq(Row(timestamp)))
+    checkAnswerPushdown(df.filter(df("testtimestamp") === timestamp), Seq(Row(timestamp)))
     // This query failed in Spark 1.6.0 but not in earlier versions. It looks like 1.6.0 performs
     // constant-folding, whereas earlier Spark versions would preserve the cast which prevented
     // filter pushdown.
-    checkAnswer(df.filter("testtimestamp = '2015-07-01 00:00:00.001'"), Seq(Row(timestamp)))
+    checkAnswerPushdown(df.filter("testtimestamp = '2015-07-01 00:00:00.001'"), Seq(Row(timestamp)))
   }
 
   test("read special float values (regression test for #261)") {
@@ -243,67 +243,67 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
   }
 
   test("properly escape literals in filter pushdown (SC-5504)") {
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (testint = 4141214)"),
       Seq(Row(1))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (testint = 7)"),
       Seq(Row(0))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select testint from test_table where (testint = 42)"),
       Seq(Row(42), Row(42))
     )
 
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (teststring = 'asdf')"),
       Seq(Row(1))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (teststring = 'alamakota')"),
       Seq(Row(0))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select teststring from test_table where (teststring = 'asdf')"),
       Seq(Row("asdf"))
     )
 
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (teststring = 'a\\'b')"),
       Seq(Row(0))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select teststring from test_table where (teststring = 'a\\'b')"),
       Seq()
     )
 
     // scalastyle:off
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (teststring = 'Unicode\\'s樂趣')"),
       Seq(Row(1))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select teststring from test_table where (teststring = \"Unicode's樂趣\")"),
       Seq(Row("Unicode's樂趣"))
     )
     // scalastyle:on
 
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select count(1) from test_table where (teststring = 'a\\\\b')"),
       Seq(Row(0))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql("select teststring from test_table where (teststring = 'a\\\\b')"),
       Seq()
     )
 
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql(
         "select count(1) from test_table where (teststring = 'Ba\\\\ckslash\\\\')"),
       Seq(Row(1))
     )
-    checkAnswer(
+    checkAnswerPushdown(
       sqlContext.sql(
         "select teststring from test_table where (teststring = \"Ba\\\\ckslash\\\\\")"),
       Seq(Row("Ba\\ckslash\\"))

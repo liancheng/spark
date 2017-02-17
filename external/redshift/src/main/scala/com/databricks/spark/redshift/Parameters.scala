@@ -31,7 +31,8 @@ private[redshift] object Parameters {
     "diststyle" -> "EVEN",
     "usestagingtable" -> "true",
     "preactions" -> ";",
-    "postactions" -> ";"
+    "postactions" -> ";",
+    "singleoutput" -> "false"
   )
 
   val VALID_TEMP_FORMATS = Set("AVRO", "CSV", "CSV GZIP")
@@ -206,6 +207,12 @@ private[redshift] object Parameters {
      * try this.
      */
     def sortKeySpec: Option[String] = parameters.get("sortkeyspec")
+
+    /**
+     * Make the Redshift UNLOAD statement be run with single file output.
+     * Used when the output from Redshift is supposed to be sorted.
+     */
+    def singleOutput: Boolean = parameters("singleoutput").toBoolean
 
     /**
      * DEPRECATED: see PR #157.

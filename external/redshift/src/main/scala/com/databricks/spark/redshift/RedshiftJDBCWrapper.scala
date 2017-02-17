@@ -278,6 +278,17 @@ private[redshift] class JDBCWrapper {
   }
 
   /**
+   * Convenience wrapper around the other `getConnector()` method,
+   * whose parameters are all obtained from `params`.
+   */
+  def getConnector(params: Parameters.MergedParameters) : Connection = {
+    val driverClass = params.jdbcDriver
+    val url = params.jdbcUrl
+    val credentials = params.credentials
+    getConnector(driverClass, url, credentials)
+  }
+
+  /**
    * Compute the SQL schema string for the given Spark SQL Schema.
    */
   def schemaString(schema: StructType): String = {
