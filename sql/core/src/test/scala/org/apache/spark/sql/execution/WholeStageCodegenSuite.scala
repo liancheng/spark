@@ -17,7 +17,9 @@
 
 package org.apache.spark.sql.execution
 
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Column, Dataset, Row}
+import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
+import org.apache.spark.sql.catalyst.expressions.{Add, Literal, Stack}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
 import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 import org.apache.spark.sql.expressions.scalalang.typed
@@ -124,5 +126,33 @@ class WholeStageCodegenSuite extends SparkPlanTest with SharedSQLContext {
       .selectExpr("named_struct('a', id, 'b', id) as col1",
         "named_struct('a',id+2, 'b',id+2) as col2")
       .filter("col1 = col2").count()
+  }
+
+  test("generate should be included in WholeStageCodegen") {
+    import org.apache.spark.sql.functions._
+    val ds = spark.range(2).select(
+      col("id"),
+      explode(array(col("id") + 1, col("id") + 2)).as("value"))
+    val plan = ds.queryExecution.executedPlan
+    assert(plan.find(p =>
+      p.isInstanceOf[WholeStageCodegenExec] &&
+        p.asInstanceOf[WholeStageCodegenExec].child.isInstanceOf[GenerateExec]).isDefined)
+    assert(ds.collect() === Array(Row(0, 1), Row(0, 2), Row(1, 2), Row(1, 3)))
+  }
+
+  test("large stack generator should not use WholeStageCodegen") {
+    def createStackGenerator(rows: Int): SparkPlan = {
+      val id = UnresolvedAttribute("id")
+      val stack = Stack(Literal(rows) +: Seq.tabulate(rows)(i => Add(id, Literal(i))))
+      spark.range(500).select(Column(stack)).queryExecution.executedPlan
+    }
+    val isCodeGenerated: SparkPlan => Boolean = {
+      case WholeStageCodegenExec(_: GenerateExec) => true
+      case _ => false
+    }
+
+    // Only 'stack' generators that produce 50 rows or less are code generated.
+    assert(createStackGenerator(50).find(isCodeGenerated).isDefined)
+    assert(createStackGenerator(100).find(isCodeGenerated).isEmpty)
   }
 }
