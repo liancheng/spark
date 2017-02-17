@@ -12,6 +12,7 @@ import java.io.{File, FileNotFoundException, InputStream, InputStreamReader, IOE
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
+import scala.util.Try
 import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs._
@@ -21,13 +22,18 @@ import org.json4s.jackson.Serialization
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
-import org.apache.spark.util.{Clock, SystemClock}
+import org.apache.spark.util.{Clock, SystemClock, ThreadUtils}
 
 /**
  * Read-side support for DatabricksAtomicCommitProtocol.
  */
 object DatabricksAtomicReadProtocol extends Logging {
   type TxnId = String
+
+  import scala.collection.parallel.ThreadPoolTaskSupport
+
+  lazy val tasksupport = new ThreadPoolTaskSupport(
+    ThreadUtils.newDaemonCachedThreadPool("db-atomic-commit-worker", 100))
 
   val STARTED_MARKER = "_started_(.*)".r
   val COMMITTED_MARKER = "_committed_(.*)".r
@@ -218,6 +224,24 @@ object DatabricksAtomicReadProtocol extends Logging {
     val corruptCommitMarkers = mutable.Set[TxnId]()
     val deletedFiles = mutable.Map[String, Long]()
 
+    // Retrieve all file contents in parallel to hide the IO latency.
+    val fileContents: Map[TxnId, Try[(Seq[String], Seq[String])]] = {
+      val pcol = filesAndMarkers.par
+      pcol.tasksupport = tasksupport
+      pcol.flatMap { stat =>
+        stat.getPath.getName match {
+          // We ignore zero-length commit markers (this is a commonly observed symptom of DBFS
+          // cancellation bugs in practice).
+          case COMMITTED_MARKER(txnId) if stat.getLen > 0 =>
+            val commitFile = new Path(dir, "_committed_" + txnId)
+            val result = Try(deserializeFileChanges(fs.open(commitFile)))
+            Some((txnId, result))
+          case _ =>
+            None
+        }
+      }.toList.toMap
+    }
+
     filesAndMarkers.foreach { stat =>
       if (stat.getModificationTime > lastModified) {
         lastModified = stat.getModificationTime
@@ -226,9 +250,8 @@ object DatabricksAtomicReadProtocol extends Logging {
         // We ignore zero-length commit markers (this is a commonly observed symptom of DBFS
         // cancellation bugs in practice).
         case COMMITTED_MARKER(txnId) if stat.getLen > 0 =>
-          val commitFile = new Path(dir, "_committed_" + txnId)
           try {
-            val (filesAdded, filesRemoved) = deserializeFileChanges(fs.open(commitFile))
+            val (filesAdded, filesRemoved) = fileContents(txnId).get
             filesRemoved.foreach { file =>
               assert(stat.getModificationTime > 0)
               deletedFiles(file) = stat.getModificationTime

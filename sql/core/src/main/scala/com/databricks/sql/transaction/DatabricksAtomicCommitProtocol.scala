@@ -24,7 +24,6 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.util.ThreadUtils
 
 /**
  * File commit protocol optimized for cloud storage. Files are written directly to their final
@@ -153,7 +152,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
 
     // Commit each updated directory in parallel.
     val dirs = (addedByDir.keys ++ removedByDir.keys).toSet.par
-    dirs.tasksupport = DatabricksAtomicCommitProtocol.tasksupport
+    dirs.tasksupport = tasksupport
     dirs.foreach { dir =>
       val commitMarker = new Path(dir, s"_committed_$txnId")
       val output = fs.create(commitMarker)
@@ -206,11 +205,6 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
 
 object DatabricksAtomicCommitProtocol extends Logging {
   import DatabricksAtomicReadProtocol._
-
-  import scala.collection.parallel.ThreadPoolTaskSupport
-
-  private lazy val tasksupport = new ThreadPoolTaskSupport(
-    ThreadUtils.newDaemonCachedThreadPool("db-atomic-commit-worker", 100))
 
   /**
    * Traverses the given directories and cleans up uncommitted or garbage files and markers. A
