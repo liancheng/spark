@@ -19,7 +19,7 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.sql.QueryTest
 import org.apache.spark.sql.execution.datasources.InMemoryFileIndex
 import org.apache.spark.sql.test.SharedSQLContext
-import org.apache.spark.util.{ManualClock, SystemClock}
+import org.apache.spark.util.{Clock, ManualClock, SystemClock}
 
 class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContext {
   test("read protocol ignores uncommitted jobs") {
@@ -119,13 +119,13 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
   test("logical delete can be flag disabled") {
     withTempDir { dir =>
-      withSQLConf("com.databricks.sql.enableLogicalDelete" -> "true") {
+      withSQLConf("spark.databricks.sql.enableLogicalDelete" -> "true") {
         spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
         assert(dir.listFiles().count(_.getName.startsWith("part")) == 1)
         spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
         assert(dir.listFiles().count(_.getName.startsWith("part")) == 2)
       }
-      withSQLConf("com.databricks.sql.enableLogicalDelete" -> "false") {
+      withSQLConf("spark.databricks.sql.enableLogicalDelete" -> "false") {
         spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
         assert(dir.listFiles().count(_.getName.startsWith("part")) == 1)
       }
@@ -202,11 +202,14 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       create(dir, "_committed_12345", "")
       // nothing removed with normal horizon since the txn counts as pending
       assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 0)
-      // removes f1, _started_12345
-      assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 0.0 HOURS").count == 2)
+      // removes f1 only. The markers are queued for deletion in the next pass.
+      assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 0.0 HOURS").count == 1)
       assert(list(dir).contains("_committed_12345"))
-      assert(!list(dir).contains("_started_12345"))
+      assert(list(dir).contains("_started_12345"))
       assert(!list(dir).contains(f1))
+      assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 0.0 HOURS").count == 3)
+      assert(!list(dir).contains("_started_12345"))
+      assert(!list(dir).contains("_committed_12345"))
     }
   }
 
@@ -323,13 +326,144 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
+  private def makeFakeTimedFs(clock: Clock): FileSystem = {
+    val fakeFs = new RawLocalFileSystem() {
+      private val creationTimes = mutable.Map[Path, Long]()
+
+      // override file creation to save our custom timestamps
+      override def create(path: Path): FSDataOutputStream = create(path, false)
+      override def create(path: Path, overwrite: Boolean): FSDataOutputStream = {
+        creationTimes(path.makeQualified(this)) = clock.getTimeMillis()
+        super.create(path, overwrite)
+      }
+
+      // fill in our custom timestamps on list
+      override def listStatus(path: Path): Array[FileStatus] = {
+        super.listStatus(path).map { stat =>
+          new FileStatus(
+            stat.getLen,
+            stat.isDir,
+            0,
+            stat.getBlockSize,
+            creationTimes.getOrElse(stat.getPath, stat.getModificationTime),
+            stat.getPath)
+        }
+      }
+    }
+    fakeFs.initialize(new File("/").toURI, new Configuration())
+    fakeFs
+  }
+
+  def withFakeClockAndFs(f: ManualClock => Unit): Unit = {
+    val clock = new ManualClock(System.currentTimeMillis)
+    val fakeFs = makeFakeTimedFs(clock)
+    DatabricksAtomicReadProtocol.clock = clock
+    DatabricksAtomicReadProtocol.testingFs = Some(fakeFs)
+    try {
+      f(clock)
+    } finally {
+      DatabricksAtomicReadProtocol.clock = new SystemClock
+      DatabricksAtomicReadProtocol.testingFs = None
+    }
+  }
+
+  test("non-overwrite metadata files deleted before data files are") {
+    withSQLConf("spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+      withTempDir { dir =>
+        withFakeClockAndFs { clock =>
+          spark.range(10).repartition(1).write.mode("append").parquet(dir.getAbsolutePath)
+          assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 0)
+          assert(list(dir).size == 3)
+
+          // not past metadata horizon
+          clock.advance(40000)
+          assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 0)
+          assert(list(dir).size == 3)
+
+          // past metadata horizon, _commit marker queued for deletion, _start deleted
+          clock.advance(40000)
+          assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 1)
+          assert(list(dir).size == 3)
+
+          // not past metadata horizon 2
+          clock.advance(40000)
+          assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 0)
+          assert(list(dir).size == 3)
+
+          // past metadata horizon 2, _commit marker deleted
+          clock.advance(40000)
+          assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 2)
+          assert(list(dir).size == 1)
+
+          // overwrite metadata however is not deleted early
+          spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+          assert(list(dir).size == 4)
+          clock.advance(80000)
+          assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 1)
+          assert(list(dir).size == 3)
+        }
+      }
+    }
+  }
+
+  test("auto-vacuum cleans up all markers early in append loop") {
+    withSQLConf("spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+      withTempDir { dir =>
+        withFakeClockAndFs { clock =>
+          for (i <- 1 to 20) {
+            spark.range(10).repartition(1).write.mode("append").parquet(dir.getAbsolutePath)
+            clock.advance(30000)
+          }
+          assert(list(dir).filter(_.startsWith("part")).size == 20)
+          assert(list(dir).filter(_.startsWith("_committed")).size == 6)
+          assert(list(dir).filter(_.startsWith("_started")).size == 2)
+        }
+      }
+    }
+  }
+
+  test("auto-vacuum does not clean up committed markers early in overwrite loop") {
+    withSQLConf("spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+      withTempDir { dir =>
+        withFakeClockAndFs { clock =>
+          for (i <- 1 to 20) {
+            spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+            clock.advance(30000)
+          }
+          assert(list(dir).filter(_.startsWith("part")).size == 20)
+          // the first did not delete any files, so it was gc'ed
+          assert(list(dir).filter(_.startsWith("_committed")).size == 19)
+          assert(list(dir).filter(_.startsWith("_started")).size == 2)
+        }
+      }
+    }
+  }
+
+  test("auto-vacuum does clean up everything past horizon in overwrite loop") {
+    withSQLConf(
+        "spark.databricks.sql.vacuum.dataHorizonHours" -> (1d / 60).toString,
+        "spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+      withTempDir { dir =>
+        withFakeClockAndFs { clock =>
+          for (i <- 1 to 20) {
+            spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
+            clock.advance(30000)
+          }
+          assert(list(dir).filter(_.startsWith("part")).size == 3)
+          assert(list(dir).filter(_.startsWith("_committed")).size == 6)
+          assert(list(dir).filter(_.startsWith("_started")).size == 2)
+        }
+      }
+    }
+  }
+
   test("vacuum horizon respects sql config") {
     withTempDir { dir =>
       val df = spark.range(10).selectExpr("id", "id as A", "id as B")
       df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
       df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
       assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 0)
-      withSQLConf("com.databricks.sql.defaultVacuumRetentionHours" -> "0.0") {
+      withSQLConf("spark.databricks.sql.vacuum.dataHorizonHours" -> "0.0") {
         assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 0)
         // removes the data files and commit markers from the first job, start markers from 2nd
         assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 30)
@@ -348,13 +482,13 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 4)
 
       // autovacuum will remove the prior 4 files
-      withSQLConf("com.databricks.sql.defaultVacuumRetentionHours" -> "0.0") {
+      withSQLConf("spark.databricks.sql.vacuum.dataHorizonHours" -> "0.0") {
         df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
         assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 1)
       }
 
       // autovacuum disabled
-      withSQLConf("com.databricks.sql.autoVacuumOnCommit" -> "false") {
+      withSQLConf("spark.databricks.sql.autoVacuumOnCommit" -> "false") {
         df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
         assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 2)
       }
@@ -481,7 +615,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
     def checkVacuum(dir: File, horizon: Long, expectedNumDeletes: Int): Unit = {
       val deleted = DatabricksAtomicCommitProtocol.vacuum0(
-        new Path(dir.getAbsolutePath), horizon, spark.sparkContext.hadoopConfiguration
+        new Path(dir.getAbsolutePath), horizon, horizon, spark.sparkContext.hadoopConfiguration
       ).filterNot(_.getName.contains(".crc"))
       assert(deleted.length == expectedNumDeletes)
     }

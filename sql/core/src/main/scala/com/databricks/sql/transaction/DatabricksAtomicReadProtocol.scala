@@ -65,7 +65,7 @@ object DatabricksAtomicReadProtocol extends Logging {
     resolvedFiles.filter { f =>
       val name = f.getPath.getName
       name match {
-        case _ if state.getDeletionTime(name) > 0 =>
+        case _ if state.isDeleted(name) =>
           logDebug(s"Ignoring ${f.getPath} since it is marked as deleted.")
           false
         case FILE_WITH_TXN_ID(txnId) if !state.isFileCommitted(txnId, name) =>
@@ -78,12 +78,18 @@ object DatabricksAtomicReadProtocol extends Logging {
   }
 
   /**
+   * A transaction's committed file changes.
+   */
+  private[transaction] case class FileChanges(
+    added: Set[String], removed: Set[String], commitTime: Long)
+
+  /**
    * Holds the parsed commit state of files local to a single directory.
    *
    * @param lastModified max modification time of files in this dir
    * @param trackedFiles list of all files with txn ids
    * @param startMarkers set of start markers found, and their creation times
-   * @param commitMarkers set of commit markers found, and their added files
+   * @param commitMarkers set of commit markers found, and their added/removed files.
    * @param corruptCommitMarkers set of commit markers we could not read
    * @param deletedFiles set of files marked as deleted by committed transactions
    */
@@ -91,7 +97,7 @@ object DatabricksAtomicReadProtocol extends Logging {
       val lastModified: Long,
       trackedFiles: Map[String, TxnId],
       startMarkers: Map[TxnId, Long],
-      commitMarkers: Map[TxnId, Set[String]],
+      commitMarkers: Map[TxnId, FileChanges],
       corruptCommitMarkers: Set[TxnId],
       deletedFiles: Map[String, Long]) {
 
@@ -103,7 +109,7 @@ object DatabricksAtomicReadProtocol extends Logging {
 
     // The set of files which are should be present but are missing.
     val missingDataFiles: Set[String] = {
-      commitMarkers.values.flatten.toSet -- trackedFiles.keys -- deletedFiles.keys
+      commitMarkers.values.map(_.added).flatten.toSet -- trackedFiles.keys -- deletedFiles.keys
     }
 
     /**
@@ -118,8 +124,13 @@ object DatabricksAtomicReadProtocol extends Logging {
      */
     def isFileCommitted(txnId: TxnId, filename: String): Boolean = {
       isCommitted(txnId) &&
-        (!commitMarkers.contains(txnId) || commitMarkers(txnId).contains(filename))
+        (!commitMarkers.contains(txnId) || commitMarkers(txnId).added.contains(filename))
     }
+
+    /**
+     * @return the approximate commit timestamp of the committed transaction, otherwise throws.
+     */
+    def getCommitTime(txnId: TxnId): Long = commitMarkers(txnId).commitTime
 
     /**
      * @return the approximate start timestamp of the pending transaction, otherwise throws.
@@ -127,9 +138,22 @@ object DatabricksAtomicReadProtocol extends Logging {
     def getStartTime(txnId: TxnId): Long = startMarkers(txnId)
 
     /**
-     * @return the deletion time of the file, or zero if it is not marked as deleted.
+     * @return whether the specified transaction removes any data files.
      */
-    def getDeletionTime(filename: String): Long = deletedFiles.getOrElse(filename, 0L)
+    def removesDataFiles(txnId: TxnId): Boolean = {
+      commitMarkers.contains(txnId) &&
+        commitMarkers(txnId).removed.filterNot(isMetadataFile).nonEmpty
+    }
+
+    /**
+     * @return the deletion time if a file is deleted, otherwise throws.
+     */
+    def getDeletionTime(filename: String): Long = deletedFiles(filename)
+
+    /**
+     * @return whether the file is marked as deleted.
+     */
+    def isDeleted(filename: String): Boolean = deletedFiles.contains(filename)
   }
 
   /**
@@ -220,12 +244,12 @@ object DatabricksAtomicReadProtocol extends Logging {
     var lastModified: Long = 0L
     val trackedFiles = mutable.Map[String, TxnId]()
     val startMarkers = mutable.Map[TxnId, Long]()
-    val commitMarkers = mutable.Map[TxnId, Set[String]]()
+    val commitMarkers = mutable.Map[TxnId, FileChanges]()
     val corruptCommitMarkers = mutable.Set[TxnId]()
     val deletedFiles = mutable.Map[String, Long]()
 
     // Retrieve all file contents in parallel to hide the IO latency.
-    val fileContents: Map[TxnId, Try[(Seq[String], Seq[String])]] = {
+    val fileContents: Map[TxnId, Try[FileChanges]] = {
       val pcol = filesAndMarkers.par
       pcol.tasksupport = tasksupport
       pcol.flatMap { stat =>
@@ -251,12 +275,12 @@ object DatabricksAtomicReadProtocol extends Logging {
         // cancellation bugs in practice).
         case COMMITTED_MARKER(txnId) if stat.getLen > 0 =>
           try {
-            val (filesAdded, filesRemoved) = fileContents(txnId).get
-            filesRemoved.foreach { file =>
+            val fileChanges = fileContents(txnId).get
+            fileChanges.removed.foreach { file =>
               assert(stat.getModificationTime > 0)
               deletedFiles(file) = stat.getModificationTime
             }
-            commitMarkers(txnId) = filesAdded.toSet
+            commitMarkers(txnId) = fileChanges.copy(commitTime = stat.getModificationTime)
           } catch {
             case e: FileNotFoundException =>
               logWarning("Job commit marker disappeared before we could read it: " + stat)
@@ -293,20 +317,25 @@ object DatabricksAtomicReadProtocol extends Logging {
       deletedFiles.toMap)
   }
 
-  def serializeFileChanges(
+  private[transaction] def serializeFileChanges(
       filesAdded: Seq[String], filesRemoved: Seq[String], out: OutputStream): Unit = {
     val changes = Map("added" -> filesAdded, "removed" -> filesRemoved)
     logDebug("Writing out file changes: " + changes)
     Serialization.write(changes, out)
   }
 
-  def deserializeFileChanges(in: InputStream): (Seq[String], Seq[String]) = {
+  private[transaction] def deserializeFileChanges(in: InputStream): FileChanges = {
     val reader = new InputStreamReader(in, StandardCharsets.UTF_8)
     try {
       val changes = Serialization.read[Map[String, Any]](reader)
-      (changes("added").asInstanceOf[Seq[String]], changes("removed").asInstanceOf[Seq[String]])
+      FileChanges(
+        changes("added").asInstanceOf[Seq[String]].toSet,
+        changes("removed").asInstanceOf[Seq[String]].toSet,
+        -1L /* filled in later */)
     } finally {
       reader.close()
     }
   }
+
+  def isMetadataFile(name: String): Boolean = name.startsWith("_")
 }

@@ -69,7 +69,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
       taskContext: TaskAttemptContext, absoluteDir: String, ext: String): String = {
     val filename = getFilename(taskContext, ext)
     val finalPath = new Path(absoluteDir, filename)
-    val fs = finalPath.getFileSystem(taskContext.getConfiguration)
+    val fs = testingFs.getOrElse(finalPath.getFileSystem(taskContext.getConfiguration))
     val startMarker = new Path(finalPath.getParent, new Path(s"_started_$txnId"))
     if (!fs.exists(startMarker)) {
       fs.create(startMarker, true).close()
@@ -83,7 +83,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
     val fs = testingFs.getOrElse(_fs)
     val sparkSession = SparkSession.getActiveSession.get
     if (!sparkSession.sqlContext.getConf(
-        "com.databricks.sql.enableLogicalDelete", "true").toBoolean) {
+        "spark.databricks.sql.enableLogicalDelete", "true").toBoolean) {
       return super.deleteWithJob(fs, path, recursive)
     }
     if (recursive && fs.getFileStatus(path).isFile) {
@@ -135,7 +135,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
   override def commitJob(jobContext: JobContext, taskCommits: Seq[TaskCommitMessage]): Unit = {
     logInfo("Committing job " + jobId)
     val root = new Path(path)
-    val fs = root.getFileSystem(jobContext.getConfiguration)
+    val fs = testingFs.getOrElse(root.getFileSystem(jobContext.getConfiguration))
     def qualify(path: Path): Path = path.makeQualified(fs.getUri, fs.getWorkingDirectory)
 
     // Collects start markers and staged task files.
@@ -170,7 +170,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
     // Optional auto-vacuum.
     val sparkSession = SparkSession.getActiveSession.get
     if (sparkSession.sqlContext.getConf(
-        "com.databricks.sql.autoVacuumOnCommit", "true").toBoolean) {
+        "spark.databricks.sql.autoVacuumOnCommit", "true").toBoolean) {
       logInfo("Auto-vacuuming directories updated by " + jobId)
       try {
         vacuum(sparkSession, dirs.seq.toSeq, None)
@@ -197,7 +197,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
     // We must leave the start markers since other stray tasks may be writing to this same
     // directory, and we need to ensure their files stay hidden.
     stagedFiles.map(new Path(_)).foreach { f =>
-      val fs = f.getFileSystem(taskContext.getConfiguration)
+      val fs = testingFs.getOrElse(f.getFileSystem(taskContext.getConfiguration))
       fs.delete(f, false)
     }
   }
@@ -215,25 +215,38 @@ object DatabricksAtomicCommitProtocol extends Logging {
    */
   def vacuum(
       sparkSession: SparkSession, paths: Seq[Path], horizonHours: Option[Double]): List[Path] = {
-    val defaultHours = sparkSession.sqlContext.getConf(
-      "com.databricks.sql.defaultVacuumRetentionHours", "48.0").toDouble
-    val hours = horizonHours.getOrElse(defaultHours)
-    val horizon = clock.getTimeMillis - (hours * 60 * 60 * 1000).toLong
+    val now = clock.getTimeMillis
+    val defaultDataHorizonHours = sparkSession.sqlContext.getConf(
+      "spark.databricks.sql.vacuum.dataHorizonHours", "48.0").toDouble
+    val dataHorizonHours = horizonHours.getOrElse(defaultDataHorizonHours)
+    val dataHorizon = now - (dataHorizonHours * 60 * 60 * 1000).toLong
 
-    logInfo(s"Started VACUUM on $paths with $horizon (now - $hours hours)")
+    // Vacuum will start removing commit markers after this time has passed, so this should be
+    // greater than the max amount of time we think a zombie executor can hang around and write
+    // output after the job has finished. TODO(ekl) move to spark edge conf
+    val metadataHorizonHours = sparkSession.sqlContext.getConf(
+      "spark.databricks.sql.vacuum.metadataHorizonHours", "0.5").toDouble
+    val metadataHorizon = math.max(
+      dataHorizon,
+      now - metadataHorizonHours * 60 * 60 * 1000).toLong
+
+    logInfo(
+      s"Started VACUUM on $paths with data horizon $dataHorizon (now - $dataHorizonHours hours), " +
+      s"metadata horizon $metadataHorizon (now - $metadataHorizonHours hours)")
 
     if (paths.length == 1) {
-      vacuum0(paths(0), horizon, sparkSession.sparkContext.hadoopConfiguration)
+      vacuum0(paths(0), dataHorizon, metadataHorizon, sparkSession.sparkContext.hadoopConfiguration)
     } else {
       val pseq = paths.par
       pseq.tasksupport = tasksupport
       pseq.map { p =>
-        vacuum0(p, horizon, sparkSession.sparkContext.hadoopConfiguration)
+        vacuum0(p, dataHorizon, metadataHorizon, sparkSession.sparkContext.hadoopConfiguration)
       }.reduce(_ ++ _)
     }
   }
 
-  private[transaction] def vacuum0(path: Path, horizon: Long, conf: Configuration): List[Path] = {
+  private[transaction] def vacuum0(
+      path: Path, dataHorizon: Long, metadataHorizon: Long, conf: Configuration): List[Path] = {
     val fs = testingFs.getOrElse(path.getFileSystem(conf))
     val (dirs, initialFiles) = fs.listStatus(path).partition(_.isDirectory)
 
@@ -246,28 +259,38 @@ object DatabricksAtomicCommitProtocol extends Logging {
 
     val (state, resolvedFiles) = resolveCommitState(fs, path, initialFiles)
 
-    // remove uncommitted and timed-out file outputs
+    def canDelete(name: String): Boolean = {
+      val deletionTime = state.getDeletionTime(name)
+      (isMetadataFile(name) && deletionTime <= metadataHorizon) ||
+        (!isMetadataFile(name) && deletionTime <= dataHorizon)
+    }
+
     for (file <- resolvedFiles) {
       file.getPath.getName match {
-        // we wait for a horizon to avoid killing Spark jobs using those files
-        case name if state.getDeletionTime(name) > 0 && state.getDeletionTime(name) <= horizon =>
-          logInfo(s"Garbage collecting ${file.getPath} since it is marked as deleted.")
+        // Files marked for deletion, either by an overwrite transaction or previous VACUUM.
+        case name if state.isDeleted(name) && canDelete(name) =>
+          logInfo(s"Garbage collecting file ${file.getPath} marked for deletion.")
           delete(file.getPath)
 
+        // Data files from failed tasks. They can be removed immediately since it is guaranteed
+        // no one will read them.
         case name @ FILE_WITH_TXN_ID(txnId) if state.isCommitted(txnId) &&
             !state.isFileCommitted(txnId, name) =>
           logInfo(s"Garbage collecting ${file.getPath} since it was written by a failed task.")
           delete(file.getPath)
 
+        // Data files from timed out transactions can be removed, since we assume the job has
+        // aborted by this time.
         case name @ FILE_WITH_TXN_ID(txnId) if !state.isCommitted(txnId) &&
-            checkPositive(state.getStartTime(txnId)) <= horizon =>
+            checkPositive(state.getStartTime(txnId)) <= dataHorizon =>
           logWarning(s"Garbage collecting ${file.getPath} since its job has timed out " +
-            s"(${state.getStartTime(txnId)} <= $horizon).")
+            s"(${state.getStartTime(txnId)} <= $dataHorizon).")
           delete(file.getPath)
 
-        // always safe to delete since the commit marker is present
+        // Start markers from committed transactions can be removed after a short grace period,
+        // since if we see the commit marker, the start marker is irrelevant.
         case STARTED_MARKER(txnId) if state.isCommitted(txnId) &&
-            checkPositive(file.getModificationTime) <= horizon =>
+            checkPositive(state.getCommitTime(txnId)) <= metadataHorizon =>
           logInfo(s"Garbage collecting start marker ${file.getPath} of committed job.")
           delete(file.getPath)
 
@@ -275,22 +298,27 @@ object DatabricksAtomicCommitProtocol extends Logging {
       }
     }
 
-    // Queue up stale markers for deletion. We do this by writing out a _committed file that
-    // will cause them to be garbage collected in the next cycle.
+    // There are some files we'd like to delete, but cannot safely do in this pass since we must
+    // ensure the deletes here are observed only after the deletes above are observed. To work
+    // around this we queue them up for deletion by writing out a _committed file that will cause
+    // them to be garbage collected in the next call to vacuum.
     var deleteLater: List[Path] = Nil
     for (file <- resolvedFiles) {
       file.getPath.getName match {
-        case name @ COMMITTED_MARKER(txnId) if state.getDeletionTime(name) == 0 &&
-            checkPositive(file.getModificationTime) <= horizon =>
-          val startMarker = new Path(file.getPath.getParent, s"_started_$txnId")
-          if (fs.exists(startMarker)) {
-            delete(startMarker)  // make sure we delete it just in case
+        // Commit markers from committed transactions.
+        case name @ COMMITTED_MARKER(txnId) if !state.isDeleted(name) =>
+          // When a commit does not remove any data files, we can delete it earlier. Otherwise we
+          // have to wait for the data horizon to pass, since those files must be purged first.
+          val dataFilesAlreadyPurged = checkPositive(file.getModificationTime) <= dataHorizon
+          if (dataFilesAlreadyPurged || (!state.removesDataFiles(txnId) &&
+              checkPositive(file.getModificationTime) <= metadataHorizon)) {
+            // Corresponding start marker and data files are guaranteed to be purged already.
+            deleteLater ::= file.getPath
           }
-          deleteLater ::= file.getPath
 
-        // the data files were deleted above, but we need to delay marker deletion
+        // Start markers from timed out transactions.
         case STARTED_MARKER(txnId) if !state.isCommitted(txnId) &&
-            checkPositive(file.getModificationTime) <= horizon =>
+            checkPositive(file.getModificationTime) <= dataHorizon =>
           deleteLater ::= file.getPath
 
         case _ =>
@@ -310,7 +338,7 @@ object DatabricksAtomicCommitProtocol extends Logging {
 
     // recurse
     for (d <- dirs) {
-      deletedPaths :::= vacuum0(d.getPath, horizon, conf)
+      deletedPaths :::= vacuum0(d.getPath, dataHorizon, metadataHorizon, conf)
       if (fs.listStatus(d.getPath).isEmpty) {
         logInfo(s"Garbage collecting empty directory ${d.getPath}")
         delete(d.getPath)
