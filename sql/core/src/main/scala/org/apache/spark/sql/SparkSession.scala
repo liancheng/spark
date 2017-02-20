@@ -98,7 +98,7 @@ class SparkSession private(
    * and a catalog that interacts with external systems.
    */
   @transient
-  private[sql] val sharedState: SharedState = {
+  val sharedState: SharedState = {
     existingSharedState.getOrElse(new SharedState(self))
   }
 
@@ -107,7 +107,7 @@ class SparkSession private(
    * functions, and everything else that accepts a [[org.apache.spark.sql.internal.SQLConf]].
    */
   @transient
-  private[sql] val sessionState: SessionState = {
+  val sessionState: SessionState = {
     SparkSession.reflect[SessionState, SparkSession](
       SparkSession.sessionStateClassName(sparkContext.conf),
       self)
@@ -973,9 +973,9 @@ object SparkSession {
     defaultSession.set(null)
   }
 
-  private[sql] def getActiveSession: Option[SparkSession] = Option(activeThreadSession.get)
+  def getActiveSession: Option[SparkSession] = Option(activeThreadSession.get)
 
-  private[sql] def getDefaultSession: Option[SparkSession] = Option(defaultSession.get)
+  def getDefaultSession: Option[SparkSession] = Option(defaultSession.get)
 
   /** A global SQL listener used for the SQL UI. */
   private[sql] val sqlListener = new AtomicReference[SQLListener]()
