@@ -14,13 +14,13 @@ import java.nio.charset.StandardCharsets
 import scala.collection.mutable
 import scala.util.control.NonFatal
 
+import com.databricks.sql.DatabricksSQLConf._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem => HadoopFileSystem, _}
 import org.apache.hadoop.mapreduce._
 import org.json4s.NoTypeHints
 import org.json4s.jackson.Serialization
 
-import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.SparkSession
@@ -82,8 +82,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
   override def deleteWithJob(_fs: HadoopFileSystem, path: Path, recursive: Boolean): Boolean = {
     val fs = testingFs.getOrElse(_fs)
     val sparkSession = SparkSession.getActiveSession.get
-    if (!sparkSession.sqlContext.getConf(
-        "spark.databricks.sql.enableLogicalDelete", "true").toBoolean) {
+    if (!sparkSession.sessionState.conf.getConf(DIRECTORY_COMMIT_ENABLE_LOGICAL_DELETE)) {
       return super.deleteWithJob(fs, path, recursive)
     }
     if (recursive && fs.getFileStatus(path).isFile) {
@@ -169,8 +168,7 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
 
     // Optional auto-vacuum.
     val sparkSession = SparkSession.getActiveSession.get
-    if (sparkSession.sqlContext.getConf(
-        "spark.databricks.sql.autoVacuumOnCommit", "true").toBoolean) {
+    if (sparkSession.sessionState.conf.getConf(DIRECTORY_COMMIT_AUTO_VACUUM_ON_COMMIT)) {
       logInfo("Auto-vacuuming directories updated by " + jobId)
       try {
         vacuum(sparkSession, dirs.seq.toSeq, None)
@@ -216,16 +214,16 @@ object DatabricksAtomicCommitProtocol extends Logging {
   def vacuum(
       sparkSession: SparkSession, paths: Seq[Path], horizonHours: Option[Double]): List[Path] = {
     val now = clock.getTimeMillis
-    val defaultDataHorizonHours = sparkSession.sqlContext.getConf(
-      "spark.databricks.sql.vacuum.dataHorizonHours", "48.0").toDouble
+    val defaultDataHorizonHours = sparkSession.sessionState.conf.getConf(
+      DIRECTORY_COMMIT_VACUUM_DATA_HORIZON_HRS)
     val dataHorizonHours = horizonHours.getOrElse(defaultDataHorizonHours)
     val dataHorizon = now - (dataHorizonHours * 60 * 60 * 1000).toLong
 
     // Vacuum will start removing commit markers after this time has passed, so this should be
     // greater than the max amount of time we think a zombie executor can hang around and write
-    // output after the job has finished. TODO(ekl) move to spark edge conf
-    val metadataHorizonHours = sparkSession.sqlContext.getConf(
-      "spark.databricks.sql.vacuum.metadataHorizonHours", "0.5").toDouble
+    // output after the job has finished.
+    val metadataHorizonHours = sparkSession.sessionState.conf.getConf(
+      DIRECTORY_COMMIT_VACUUM_METADATA_HORIZON_HRS)
     val metadataHorizon = math.max(
       dataHorizon,
       now - metadataHorizonHours * 60 * 60 * 1000).toLong

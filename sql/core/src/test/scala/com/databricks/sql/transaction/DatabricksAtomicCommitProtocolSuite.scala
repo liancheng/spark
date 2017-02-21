@@ -12,6 +12,7 @@ import java.io._
 
 import scala.collection.mutable
 
+import com.databricks.sql.DatabricksSQLConf._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 
@@ -37,11 +38,11 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       create(dir, "part-r-00001-tid-77777-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv")
       create(dir, "part-r-00001-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv")
       try {
-        SparkEnv.get.conf.set("spark.databricks.sql.enableFilterUncommitted", "false")
+        SparkEnv.get.conf.set(DIRECTORY_COMMIT_FILTER_UNCOMMITTED.key, "false")
         assert(spark.read.csv(dir.getAbsolutePath).count == 2)
         assert(spark.read.csv(dir.getAbsolutePath).inputFiles.length == 2)
       } finally {
-        SparkEnv.get.conf.remove("spark.databricks.sql.enableFilterUncommitted")
+        SparkEnv.get.conf.remove(DIRECTORY_COMMIT_FILTER_UNCOMMITTED.key)
       }
     }
   }
@@ -119,13 +120,13 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
   test("logical delete can be flag disabled") {
     withTempDir { dir =>
-      withSQLConf("spark.databricks.sql.enableLogicalDelete" -> "true") {
+      withSQLConf(DIRECTORY_COMMIT_ENABLE_LOGICAL_DELETE.key -> "true") {
         spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
         assert(dir.listFiles().count(_.getName.startsWith("part")) == 1)
         spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
         assert(dir.listFiles().count(_.getName.startsWith("part")) == 2)
       }
-      withSQLConf("spark.databricks.sql.enableLogicalDelete" -> "false") {
+      withSQLConf(DIRECTORY_COMMIT_ENABLE_LOGICAL_DELETE.key -> "false") {
         spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
         assert(dir.listFiles().count(_.getName.startsWith("part")) == 1)
       }
@@ -223,10 +224,10 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       }
       assert(error.getMessage.contains("Failed to read job commit marker"))
       try {
-        SparkEnv.get.conf.set("spark.databricks.sql.ignoreCorruptCommitMarkers", "true")
+        SparkEnv.get.conf.set(DIRECTORY_COMMIT_IGNORE_CORRUPT_MARKERS.key, "true")
         assert(spark.read.csv(dir.getAbsolutePath).count == 1)
       } finally {
-        SparkEnv.get.conf.remove("spark.databricks.sql.ignoreCorruptCommitMarkers")
+        SparkEnv.get.conf.remove(DIRECTORY_COMMIT_IGNORE_CORRUPT_MARKERS.key)
       }
     }
   }
@@ -368,7 +369,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
   }
 
   test("non-overwrite metadata files deleted before data files are") {
-    withSQLConf("spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+    withSQLConf(DIRECTORY_COMMIT_VACUUM_METADATA_HORIZON_HRS.key -> (1d / 60).toString) {
       withTempDir { dir =>
         withFakeClockAndFs { clock =>
           spark.range(10).repartition(1).write.mode("append").parquet(dir.getAbsolutePath)
@@ -407,7 +408,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
   }
 
   test("auto-vacuum cleans up all markers early in append loop") {
-    withSQLConf("spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+    withSQLConf(DIRECTORY_COMMIT_VACUUM_METADATA_HORIZON_HRS.key -> (1d / 60).toString) {
       withTempDir { dir =>
         withFakeClockAndFs { clock =>
           for (i <- 1 to 20) {
@@ -423,7 +424,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
   }
 
   test("auto-vacuum does not clean up committed markers early in overwrite loop") {
-    withSQLConf("spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+    withSQLConf(DIRECTORY_COMMIT_VACUUM_METADATA_HORIZON_HRS.key -> (1d / 60).toString) {
       withTempDir { dir =>
         withFakeClockAndFs { clock =>
           for (i <- 1 to 20) {
@@ -441,8 +442,8 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
   test("auto-vacuum does clean up everything past horizon in overwrite loop") {
     withSQLConf(
-        "spark.databricks.sql.vacuum.dataHorizonHours" -> (1d / 60).toString,
-        "spark.databricks.sql.vacuum.metadataHorizonHours" -> (1d / 60).toString) {
+        DIRECTORY_COMMIT_VACUUM_DATA_HORIZON_HRS.key -> (1d / 60).toString,
+        DIRECTORY_COMMIT_VACUUM_METADATA_HORIZON_HRS.key -> (1d / 60).toString) {
       withTempDir { dir =>
         withFakeClockAndFs { clock =>
           for (i <- 1 to 20) {
@@ -463,7 +464,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
       df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
       assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 0)
-      withSQLConf("spark.databricks.sql.vacuum.dataHorizonHours" -> "0.0") {
+      withSQLConf(DIRECTORY_COMMIT_VACUUM_DATA_HORIZON_HRS.key -> "0.0") {
         assert(sql(s"VACUUM '${dir.getAbsolutePath}' RETAIN 1 HOURS").count == 0)
         // removes the data files and commit markers from the first job, start markers from 2nd
         assert(sql(s"VACUUM '${dir.getAbsolutePath}'").count == 30)
@@ -482,13 +483,13 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 4)
 
       // autovacuum will remove the prior 4 files
-      withSQLConf("spark.databricks.sql.vacuum.dataHorizonHours" -> "0.0") {
+      withSQLConf(DIRECTORY_COMMIT_VACUUM_DATA_HORIZON_HRS.key -> "0.0") {
         df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
         assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 1)
       }
 
       // autovacuum disabled
-      withSQLConf("spark.databricks.sql.autoVacuumOnCommit" -> "false") {
+      withSQLConf(DIRECTORY_COMMIT_AUTO_VACUUM_ON_COMMIT.key -> "false") {
         df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
         assert(new File(dir, "A=0/B=0").listFiles().count(_.getName.startsWith("part")) == 2)
       }
