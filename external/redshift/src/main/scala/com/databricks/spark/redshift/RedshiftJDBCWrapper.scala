@@ -212,11 +212,14 @@ private[redshift] class JDBCWrapper {
    *                                is None then `spark-redshift` will attempt to automatically
    *                                discover the appropriate driver class.
    * @param url the JDBC url to connect to.
+   * @param credentials User credentials
+   * @param schemaSearchPath Schema search_path to use.
    */
   def getConnector(
       userProvidedDriverClass: Option[String],
       url: String,
-      credentials: Option[(String, String)]) : Connection = {
+      credentials: Option[(String, String)],
+      schemaSearchPath: Option[String] = None) : Connection = {
     val subprotocol = url.stripPrefix("jdbc:").split(":")(0)
     val driverClass: String = getDriverClass(subprotocol, userProvidedDriverClass)
     DriverRegistry.register(driverClass)
@@ -246,6 +249,7 @@ private[redshift] class JDBCWrapper {
       properties.setProperty("user", user)
       properties.setProperty("password", password)
     }
+
     // We enable SSL by default, unless the user provides any explicit SSL-related settings.
     if (!(url.contains("?ssl") || url.contains("&ssl"))) {
       val driverVersion = Utils.classForName(driverClass).getPackage.getImplementationVersion
@@ -274,7 +278,16 @@ private[redshift] class JDBCWrapper {
       log.info("Not auto-enabling full SSL encryption for JDBC connection to Redshift because " +
         "explicit SSL-related options were detected in the JDBC URL")
     }
-    driver.connect(url, properties)
+
+    val conn = driver.connect(url, properties)
+
+    // Set schema search_path, if specified.
+    schemaSearchPath match {
+      case Some(schema) => conn.createStatement().executeUpdate(s"set search_path to $schema")
+      case other =>
+    }
+
+    conn
   }
 
   /**
@@ -285,7 +298,8 @@ private[redshift] class JDBCWrapper {
     val driverClass = params.jdbcDriver
     val url = params.jdbcUrl
     val credentials = params.credentials
-    getConnector(driverClass, url, credentials)
+    val searchPath = params.searchPath
+    getConnector(driverClass, url, credentials, searchPath)
   }
 
   /**

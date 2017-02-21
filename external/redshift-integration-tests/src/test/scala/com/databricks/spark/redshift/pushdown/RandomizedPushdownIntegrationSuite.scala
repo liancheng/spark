@@ -136,7 +136,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
          """.stripMargin,
       ref = Some(
         s"""
-           |SELECT "id", "randint", "randstr", "randbool", "randlong" FROM "PUBLIC"."test_table_1 "
+           |SELECT "id", "randint", "randstr", "randbool", "randlong" FROM "test_table_1 "
          """.stripMargin)
     )
   }
@@ -155,7 +155,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |       (SELECT ("subquery_1"."randint") AS "subquery_2_col_0",
            |               ("subquery_1"."randbool") AS "subquery_2_col_1" FROM
            |               (SELECT * FROM
-           |                       (SELECT * FROM "PUBLIC"."test_table_1 "
+           |                       (SELECT * FROM "test_table_1 "
            |               ) AS "subquery_0"
            |        WHERE ("subquery_0"."randbool" IS NOT NULL)
            |       ) AS "subquery_1")
@@ -177,7 +177,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |        (CONCAT("subquery_0"."randstr2", "subquery_0"."randstr3"))
            |          AS "subquery_1_col_0",
            |        (LPAD("subquery_0"."randstr2", 5, '%')) AS "subquery_1_col_1" FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_2 "
+           |               (SELECT * FROM "test_table_2 "
            |       ) AS "subquery_0")
         """.stripMargin)
     )
@@ -195,7 +195,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |SELECT "subquery_1_col_0" FROM
            |       (SELECT (TRANSLATE("subquery_0"."randstr2", 'sd', 'po'))
            |         AS "subquery_1_col_0" FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_2 "
+           |               (SELECT * FROM "test_table_2 "
            |       ) AS "subquery_0")
         """.stripMargin)
     )
@@ -216,7 +216,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |       (SELECT ("subquery_1"."id") AS "subquery_2_col_0",
            |               ("subquery_1"."randint") AS "subquery_2_col_1" FROM
            |               (SELECT * FROM
-           |                       (SELECT * FROM "PUBLIC"."test_table_1 "
+           |                       (SELECT * FROM "test_table_1 "
            |               ) AS "subquery_0"
            |        WHERE ("subquery_0"."randint" IS NOT NULL)
            |       ) AS "subquery_1")
@@ -239,7 +239,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |        (SELECT ("subquery_1"."randstr2") AS "subquery_2_col_0",
            |                ("subquery_1"."randint2") AS "subquery_2_col_1" FROM
            |                (SELECT * FROM
-           |                        (SELECT * FROM "PUBLIC"."test_table_2 "
+           |                        (SELECT * FROM "test_table_2 "
            |                ) AS "subquery_0"
            |         WHERE ("subquery_0"."randstr2" IS NOT NULL)
            |        ) AS "subquery_1")
@@ -268,7 +268,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |       (SELECT ("subquery_0"."randint") AS "subquery_1_col_0",
            |               ("subquery_0"."randbool") AS "subquery_1_col_1",
            |               ("subquery_0"."randlong") AS "subquery_1_col_2" FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_1 "
+           |               (SELECT * FROM "test_table_1 "
            |       ) AS "subquery_0")
         """.stripMargin))
   }
@@ -303,7 +303,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |               (("subquery_2"."randint" * 0)) AS "subquery_3_col_5" FROM
            |               (SELECT * FROM
            |                       (SELECT * FROM
-           |                               (SELECT * FROM "PUBLIC"."test_table_1 "
+           |                               (SELECT * FROM "test_table_1 "
            |                       ) AS "subquery_0"
            |                WHERE (("subquery_0"."randint" IS NOT NULL)
            |                      AND NOT((("subquery_0"."randint" * 0) = 0)))
@@ -340,7 +340,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |                                       ("subquery_1"."randbool") AS "subquery_2_col_2",
            |                                       ("subquery_1"."randlong") AS "subquery_2_col_3"
            |                                       FROM (SELECT * FROM
-           |                                               (SELECT * FROM "PUBLIC"."test_table_1 "
+           |                                               (SELECT * FROM "test_table_1 "
            |                                       ) AS "subquery_0"
            |                                WHERE (("subquery_0"."randbool" IS NOT NULL)
            |                                      AND ("subquery_0"."randbool" = true))
@@ -371,7 +371,7 @@ class RandomizedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |SELECT "subquery_2_col_0" FROM
            |       (SELECT ("subquery_1"."id") AS "subquery_2_col_0" FROM
            |               (SELECT * FROM
-           |                       (SELECT * FROM "PUBLIC"."test_table_1 "
+           |                       (SELECT * FROM "test_table_1 "
            |               ) AS "subquery_0"
            |        WHERE (("subquery_0"."randbool" OR NOT("subquery_0"."randbool"))
            |              AND ((("subquery_0"."id" * 2) < ("subquery_0"."id" + 5))

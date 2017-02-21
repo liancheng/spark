@@ -37,7 +37,6 @@ class PostgresDriverIntegrationSuite extends IntegrationSuiteBase {
   }
 
   test("roundtrip save and load") {
-    conn.setAutoCommit(false) // TODO(josh): Hack needed due to different PG driver version
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1)), 1),
       StructType(StructField("foo", IntegerType) :: Nil))
     testRoundtripSaveAndLoad(s"save_with_one_empty_partition_$randomSuffix", df)

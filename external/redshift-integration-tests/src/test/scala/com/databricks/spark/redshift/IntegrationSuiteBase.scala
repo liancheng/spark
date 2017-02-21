@@ -58,12 +58,14 @@ trait IntegrationSuiteBase
   }
 
   /**
-   * Random suffix appended appended to table and directory names in order to avoid collisions
+   * Random suffix appended appended to schema, table and directory names to avoid collisions
    * between separate Travis builds.
    */
   protected val randomSuffix: String = Math.abs(Random.nextLong()).toString
 
   protected val tempDir: String = AWS_S3_SCRATCH_SPACE + randomSuffix + "/"
+
+  protected val schemaName = s"redshift_it_$randomSuffix"
 
   protected val createSqlContextBeforeEach = true
 
@@ -95,10 +97,19 @@ trait IntegrationSuiteBase
     sc.hadoopConfiguration.set("fs.s3n.awsAccessKeyId", AWS_ACCESS_KEY_ID)
     sc.hadoopConfiguration.set("fs.s3n.awsSecretAccessKey", AWS_SECRET_ACCESS_KEY)
     conn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None)
+    // Disable autocommit due to conflicts with PG JDBC driver:
+    // PG JDBC driver seems to forbid calling explicit commit when autocommit is on,
+    // so lets just make autocommit off everywhere for consistency.
+    conn.setAutoCommit(false)
+    conn.createStatement().executeUpdate(s"create schema if not exists $schemaName")
+    conn.createStatement().execute(s"set search_path to $schemaName, '$$user', public")
+    conn.commit()
   }
 
   override def afterAll(): Unit = {
     try {
+      conn.createStatement().executeUpdate(s"drop schema if exists $schemaName cascade")
+      conn.commit()
       val conf = new Configuration(false)
       conf.set("fs.s3n.awsAccessKeyId", AWS_ACCESS_KEY_ID)
       conf.set("fs.s3n.awsSecretAccessKey", AWS_SECRET_ACCESS_KEY)
@@ -140,6 +151,7 @@ trait IntegrationSuiteBase
       .option("url", jdbcUrl)
       .option("tempdir", tempDir)
       .option("forward_spark_s3_credentials", "true")
+      .option("search_path", s"$schemaName, '$$user', public")
   }
   /**
    * Create a new DataFrameWriter using common options for writing to Redshift.
@@ -150,6 +162,7 @@ trait IntegrationSuiteBase
       .option("url", jdbcUrl)
       .option("tempdir", tempDir)
       .option("forward_spark_s3_credentials", "true")
+      .option("search_path", s"$schemaName, '$$user', public")
   }
 
   protected def createTestDataInRedshift(tableName: String): Unit = {

@@ -14,8 +14,8 @@ import org.apache.spark.SparkFunSuite
 class TableNameSuite extends SparkFunSuite {
   test("TableName.parseFromEscaped") {
     assert(TableName.parseFromEscaped("foo.bar") === TableName("foo", "bar"))
-    assert(TableName.parseFromEscaped("foo") === TableName("PUBLIC", "foo"))
-    assert(TableName.parseFromEscaped("\"foo\"") === TableName("PUBLIC", "foo"))
+    assert(TableName.parseFromEscaped("foo") === TableName("foo"))
+    assert(TableName.parseFromEscaped("\"foo\"") === TableName("foo"))
     assert(TableName.parseFromEscaped("\"\"\"foo\"\"\".bar") === TableName("\"foo\"", "bar"))
     // Dots (.) can also appear inside of valid identifiers.
     assert(TableName.parseFromEscaped("\"foo.bar\".baz") === TableName("foo.bar", "baz"))
@@ -26,5 +26,7 @@ class TableNameSuite extends SparkFunSuite {
     assert(TableName("foo", "bar").toString === """"foo"."bar"""")
     assert(TableName("PUBLIC", "bar").toString === """"PUBLIC"."bar"""")
     assert(TableName("\"foo\"", "bar").toString === "\"\"\"foo\"\"\".\"bar\"")
+    assert(TableName("bar").toString === "\"bar\"")
+    assert(TableName("\"bar\"").toString === "\"\"\"bar\"\"\"")
   }
 }

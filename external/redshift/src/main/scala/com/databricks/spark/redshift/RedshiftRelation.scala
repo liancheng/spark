@@ -61,7 +61,7 @@ private[redshift] case class RedshiftRelation(
     userSchema.getOrElse {
       val tableNameOrSubquery =
         params.query.map(q => s"($q)").orElse(params.table.map(_.toString)).get
-      val conn = jdbcWrapper.getConnector(params.jdbcDriver, params.jdbcUrl, params.credentials)
+      val conn = jdbcWrapper.getConnector(params)
       try {
         jdbcWrapper.resolveTable(conn, tableNameOrSubquery)
       } finally {

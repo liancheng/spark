@@ -34,6 +34,7 @@ class FilterPushdownIntegrationSuite extends IntegrationSuiteBase {
     jdbcUpdate(s"create table $test_table(i int, s varchar(256))")
     jdbcUpdate(s"""insert into $test_table
                   |values(null, 'Hello'), (2, 'Redshift'), (3, 'Spark'), (4, null)""".stripMargin)
+    conn.commit()
   }
 
   test("Test Simple Comparisons") {
@@ -94,7 +95,7 @@ class FilterPushdownIntegrationSuite extends IntegrationSuiteBase {
     val loadedDf = read
       .option("dbtable", s"$test_table")
       .load().filter(filter).sort("i")
-    val expectedQuery = s"""SELECT "i", "s" FROM "PUBLIC"."$test_table" WHERE $expectedWhere"""
+    val expectedQuery = s"""SELECT "i", "s" FROM "$test_table" WHERE $expectedWhere"""
     testPushdownDF(loadedDf, expectedAnswer, refBasicSQL = Some(expectedQuery), refFullSQL = None)
   }
 }

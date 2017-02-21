@@ -53,7 +53,7 @@ class ColumnMetadataSuite extends IntegrationSuiteBase {
       val schema = StructType(
         StructField("x", StringType, metadata = metadata) :: Nil)
       write(sqlContext.createDataFrame(sc.parallelize(Seq(Row("a" * 128))), schema))
-        .option("dbtable", tableName)
+        .option("dbtable", s"PUBLIC.$tableName")
         .mode(SaveMode.ErrorIfExists)
         .save()
       assert(DefaultJDBCWrapper.tableExists(conn, tableName))
@@ -78,7 +78,7 @@ class ColumnMetadataSuite extends IntegrationSuiteBase {
       val schema = StructType(
         StructField("x", StringType, metadata = metadata) :: Nil)
       write(sqlContext.createDataFrame(sc.parallelize(Seq(Row("a" * 128))), schema))
-        .option("dbtable", tableName)
+        .option("dbtable", s"PUBLIC.$tableName")
         .option("description", "Hello Table")
         .mode(SaveMode.ErrorIfExists)
         .save()

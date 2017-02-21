@@ -73,6 +73,21 @@ private[redshift] object Parameters {
       throw new IllegalArgumentException(
         "You must specify credentials in either the URL or as user/password options")
     }
+    if (userParameters.contains("search_path")) {
+      // Validate the search_path as speced by
+      // http://docs.aws.amazon.com/redshift/latest/dg/r_search_path.html
+      // http://docs.aws.amazon.com/redshift/latest/dg/r_names.html
+      // For '$user' - verified experimentally that it is case sensitive
+      // scalastyle:off
+      if (!userParameters.get("search_path").get.split(",").forall {
+          s => s.trim.equals("'$user'") || // special case: '$user' schema
+            s.trim.matches("""^[\$_A-Za-z0-9\u0080-\uFFFF]+$""") || // unquoted name
+            s.trim.matches("""^"[\$_A-Za-z0-9\u0080-\uFFFF]+"$""") // quoted name
+      }) {
+        throw new IllegalArgumentException("Invalid syntax of search_path.")
+      }
+      // scalastyle:on
+    }
 
     MergedParameters(DEFAULT_PARAMETERS ++ userParameters)
   }
@@ -207,6 +222,11 @@ private[redshift] object Parameters {
      * try this.
      */
     def sortKeySpec: Option[String] = parameters.get("sortkeyspec")
+
+    /**
+     * The name of the Redshift Schema, if specified will be set on the Connection
+     */
+    def searchPath: Option[String] = parameters.get("search_path")
 
     /**
      * Make the Redshift UNLOAD statement be run with single file output.

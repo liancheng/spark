@@ -70,6 +70,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
          |(null, 0),
          |(4, 3)
        """.stripMargin)
+    conn.commit()
 
     val df1 = read
       .option("dbtable", test_table1)
@@ -94,7 +95,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
         s"""
             |SELECT ("subquery_1"."i") AS "subquery_1_col_0" FROM
             |       (SELECT * FROM
-            |               (SELECT * FROM "PUBLIC"."test_table_simple1 "
+            |               (SELECT * FROM "test_table_simple1 "
             |       ) AS "subquery_0"
             |       WHERE ("subquery_0"."i" IS NOT NULL)
             |)""".stripMargin),
@@ -113,7 +114,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
          """.stripMargin,
       refFullSQL = Some(
         s"""
-           |SELECT "o", "p" FROM "PUBLIC"."test_table_simple2 "
+           |SELECT "o", "p" FROM "test_table_simple2 "
         """.stripMargin),
       refResult =
         Seq(Row(0, 0), Row(1, 0), Row(2, 2), Row(3, 1), Row(5, 1))
@@ -131,7 +132,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
         s"""
            |SELECT count(*) FROM
            |    (SELECT * FROM
-           |     (SELECT * FROM "PUBLIC"."test_table_simple2 ") AS "subquery_0"
+           |     (SELECT * FROM "test_table_simple2 ") AS "subquery_0"
            |      WHERE (("subquery_0"."o" IS NOT NULL) AND ("subquery_0"."o" = 4)))
         """.stripMargin),
       refResult = Seq(Row(3))
@@ -150,7 +151,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
         s"""
            |SELECT "o", "p" FROM
            |       (SELECT * FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_simple2 "
+           |               (SELECT * FROM "test_table_simple2 "
            |       ) AS "subquery_0"
            |       WHERE ((("subquery_0"."p" IS NOT NULL) AND ("subquery_0"."p" > 1))
            |             AND ("subquery_0"."p" < 3)))
@@ -170,7 +171,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
         s"""
            |SELECT "o", "p" FROM
            |       (SELECT * FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_simple2 "
+           |               (SELECT * FROM "test_table_simple2 "
            |       ) AS "subquery_0"
            |       ORDER BY ("subquery_0"."o") ASC NULLS LAST,
            |                ("subquery_0"."p") DESC NULLS LAST)
@@ -190,7 +191,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
         s"""
            |SELECT "o", "p" FROM
            |       (SELECT * FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_simple2 "
+           |               (SELECT * FROM "test_table_simple2 "
            |       ) AS "subquery_0"
            |       LIMIT 1)
          """.stripMargin),
@@ -214,7 +215,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |       (SELECT * FROM
            |               (SELECT * FROM
            |                       (SELECT * FROM
-           |                               (SELECT * FROM "PUBLIC"."test_table_simple2 "
+           |                               (SELECT * FROM "test_table_simple2 "
            |                       ) AS "subquery_0"
            |                WHERE ((("subquery_0"."p" IS NOT NULL) AND ("subquery_0"."p" > 1))
            |                      AND ("subquery_0"."p" < 3))
@@ -243,7 +244,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |               (SELECT ("subquery_1"."p") AS "subquery_2_col_0",
            |                       ("subquery_1"."o") AS "subquery_2_col_1" FROM
            |                       (SELECT * FROM
-           |                               (SELECT * FROM "PUBLIC"."test_table_simple2 "
+           |                               (SELECT * FROM "test_table_simple2 "
            |                       ) AS "subquery_0"
            |                WHERE ((("subquery_0"."p" IS NOT NULL) AND ("subquery_0"."p" > 1))
            |                      AND ("subquery_0"."p" < 3))
@@ -267,7 +268,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
          """.stripMargin,
       refFullSQL = Some(
         s"""
-           |SELECT "i", "s" FROM "PUBLIC"."test_table_simple1 "
+           |SELECT "i", "s" FROM "test_table_simple1 "
         """.stripMargin),
       refResult =
         Seq(Row(null, "Hello*****"), Row(2, "Redshift**"), Row(3, "Spark*****"), Row(4, null))
@@ -286,7 +287,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
         s"""
            |SELECT "o", "p" FROM
            |       (SELECT * FROM
-           |               (SELECT * FROM "PUBLIC"."test_table_simple2 "
+           |               (SELECT * FROM "test_table_simple2 "
            |       ) AS "subquery_0"
            |       WHERE (("subquery_0"."o" IS NULL) OR NOT(("subquery_0"."o" IN (1, 2, 3)))))
         """.stripMargin),
@@ -316,7 +317,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
            |               (("subquery_1"."s" LIKE '%edshif%')) AS "subquery_2_col_3",
            |               (("subquery_1"."s" LIKE '%t')) AS "subquery_2_col_4" FROM
            |               (SELECT * FROM
-           |                       (SELECT * FROM "PUBLIC"."test_table_simple1 "
+           |                       (SELECT * FROM "test_table_simple1 "
            |               ) AS "subquery_0"
            |        WHERE ((("subquery_0"."s" LIKE 'R%') AND ("subquery_0"."s" LIKE '%edshif%'))
            |              AND ("subquery_0"."s" LIKE '%t'))
@@ -337,7 +338,7 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
          """.stripMargin,
       refFullSQL = Some(
         s"""
-           |SELECT "i", "s" FROM "PUBLIC"."test_table_simple1 " WHERE ("i" IS NOT NULL)
+           |SELECT "i", "s" FROM "test_table_simple1 " WHERE ("i" IS NOT NULL)
         """.stripMargin),
       refResult =
         Seq.empty

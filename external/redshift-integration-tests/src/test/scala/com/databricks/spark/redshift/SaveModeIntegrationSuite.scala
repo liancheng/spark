@@ -27,10 +27,10 @@ class SaveModeIntegrationSuite extends IntegrationSuiteBase {
         .option("dbtable", tableName)
         .mode(SaveMode.ErrorIfExists)
         .save()
-      assert(DefaultJDBCWrapper.tableExists(conn, s"PUBLIC.$tableName"))
+      assert(DefaultJDBCWrapper.tableExists(conn, s"$schemaName.$tableName"))
       // Try overwriting that table while using the schema-qualified table name:
       write(df)
-        .option("dbtable", s"PUBLIC.$tableName")
+        .option("dbtable", s"$schemaName.$tableName")
         .mode(SaveMode.Overwrite)
         .save()
     }
