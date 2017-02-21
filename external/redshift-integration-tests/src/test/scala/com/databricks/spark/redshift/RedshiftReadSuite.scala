@@ -309,4 +309,14 @@ class RedshiftReadSuite extends IntegrationSuiteBase {
       Seq(Row("Ba\\ckslash\\"))
     )
   }
+
+  test("read result of count() query (a BigInt) returned as LongType (spark-redshift #310)") {
+    val df = read.option("query", s"select count(testbool)::BigInt from $test_table").load()
+    assert(df.schema.fields(0).dataType === LongType)
+  }
+
+  test("read result returning a BigInt becomes a LongType (spark-redshift #311)") {
+    val df = read.option("query", s"select testlong::BigInt as c from $test_table").load()
+    assert(df.schema.fields(0).dataType === LongType)
+  }
 }

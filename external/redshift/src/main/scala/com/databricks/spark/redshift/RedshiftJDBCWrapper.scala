@@ -353,11 +353,15 @@ private[redshift] class JDBCWrapper {
       precision: Int,
       scale: Int,
       signed: Boolean): DataType = {
+
+    // Redshift supported types:
+    // http://docs.aws.amazon.com/redshift/latest/dg/c_Supported_data_types.html
     // TODO: cleanup types which are irrelevant for Redshift.
+
     val answer = sqlType match {
       // scalastyle:off
       case java.sql.Types.ARRAY         => null
-      case java.sql.Types.BIGINT        => if (signed) { LongType } else { DecimalType(20,0) }
+      case java.sql.Types.BIGINT        => LongType
       case java.sql.Types.BINARY        => BinaryType
       case java.sql.Types.BIT           => BooleanType // @see JdbcDialect for quirks
       case java.sql.Types.BLOB          => BinaryType
@@ -372,7 +376,7 @@ private[redshift] class JDBCWrapper {
       case java.sql.Types.DISTINCT      => null
       case java.sql.Types.DOUBLE        => DoubleType
       case java.sql.Types.FLOAT         => FloatType
-      case java.sql.Types.INTEGER       => if (signed) { IntegerType } else { LongType }
+      case java.sql.Types.INTEGER       => IntegerType
       case java.sql.Types.JAVA_OBJECT   => null
       case java.sql.Types.LONGNVARCHAR  => StringType
       case java.sql.Types.LONGVARBINARY => BinaryType
