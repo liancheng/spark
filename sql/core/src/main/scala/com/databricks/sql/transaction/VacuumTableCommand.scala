@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.command
+package com.databricks.sql.transaction
 
 import java.net.URI
 
@@ -24,6 +24,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.transaction.DatabricksAtomicCommitProtocol
 import org.apache.spark.sql.types._
 

@@ -9,6 +9,7 @@
 package com.databricks.sql.acl
 
 import com.databricks.sql.acl.Action.{ReadMetadata, Select}
+import com.databricks.sql.transaction.VacuumTableCommand
 import org.apache.hadoop.fs.Path
 import org.mockito.Mockito._
 

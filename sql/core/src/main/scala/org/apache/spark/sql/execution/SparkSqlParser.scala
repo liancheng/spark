@@ -87,21 +87,6 @@ class SparkSqlAstBuilder(conf: SQLConf) extends AstBuilder {
   }
 
   /**
-   * Create a [[VacuumTable]] logical plan.
-   * Example SQL :
-   * {{{
-   *   VACUUM ('/path/to/dir' | table_name) [RETAIN number HOURS];
-   * }}}
-   */
-  override def visitVacuumTable(
-      ctx: VacuumTableContext): LogicalPlan = withOrigin(ctx) {
-    VacuumTableCommand(
-      Option(ctx.path).map(string),
-      Option(ctx.tableIdentifier).map(visitTableIdentifier),
-      Option(ctx.number).map(_.getText.toDouble))
-  }
-
-  /**
    * Create an [[AnalyzeTableCommand]] command or an [[AnalyzeColumnCommand]] command.
    * Example SQL for analyzing table :
    * {{{

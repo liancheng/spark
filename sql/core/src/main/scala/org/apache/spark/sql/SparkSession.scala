@@ -80,6 +80,10 @@ class SparkSession private(
     this(sc, None, new SparkSessionExtensions)
   }
 
+  private[sql] def this(sc: SparkContext, extensions: Option[SparkSessionExtensions]) {
+    this(sc, None, extensions.getOrElse(new SparkSessionExtensions))
+  }
+
   sparkContext.assertNotStopped()
 
   /**

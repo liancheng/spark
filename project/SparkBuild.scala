@@ -548,7 +548,7 @@ object Catalyst {
 
 object SQL {
   lazy val settings = antlr4Settings ++ Seq(
-    antlr4PackageName in Antlr4 := Some("com.databricks.sql.acl"),
+    antlr4PackageName in Antlr4 := Some("com.databricks.sql.parser"),
     antlr4GenListener in Antlr4 := true,
     antlr4GenVisitor in Antlr4 := true,
     initialCommands in console :=

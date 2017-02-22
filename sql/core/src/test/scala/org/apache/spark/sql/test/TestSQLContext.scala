@@ -18,16 +18,26 @@
 package org.apache.spark.sql.test
 
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.internal.{SessionState, SQLConf}
 
 /**
  * A special [[SparkSession]] prepared for testing.
  */
-private[sql] class TestSparkSession(sc: SparkContext) extends SparkSession(sc) { self =>
-  def this(sparkConf: SparkConf) {
+private[sql] class TestSparkSession(sc: SparkContext, extensions: Option[SparkSessionExtensions])
+  extends SparkSession(sc, extensions) { self =>
+
+  private[sql] def this(sc: SparkContext) {
+    this(sc, None)
+  }
+
+  def this(sparkConf: SparkConf, extensions: Option[SparkSessionExtensions]) {
     this(new SparkContext("local[2]", "test-sql-context",
-      sparkConf.set("spark.sql.testkey", "true")))
+      sparkConf.set("spark.sql.testkey", "true")), extensions)
+  }
+
+  def this(sparkConf: SparkConf) {
+    this(sparkConf, None)
   }
 
   def this() {

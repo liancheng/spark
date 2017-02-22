@@ -13,16 +13,27 @@ import java.io._
 import scala.collection.mutable
 
 import com.databricks.sql.DatabricksSQLConf._
+import com.databricks.sql.acl.NoOpAclClient
+import com.databricks.sql.parser.DatabricksSqlParser
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 
-import org.apache.spark.SparkEnv
-import org.apache.spark.sql.QueryTest
+import org.apache.spark.{DebugFilesystem, SparkEnv}
+import org.apache.spark.sql.{QueryTest, SparkSessionExtensions}
 import org.apache.spark.sql.execution.datasources.InMemoryFileIndex
-import org.apache.spark.sql.test.SharedSQLContext
+import org.apache.spark.sql.test.{SharedSQLContext, TestSparkSession}
 import org.apache.spark.util.{Clock, ManualClock, SystemClock}
 
 class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContext {
+  override def createSparkSession: TestSparkSession = {
+    val extensions = new SparkSessionExtensions
+    extensions.injectParser((_, delegate) => new DatabricksSqlParser(NoOpAclClient, delegate))
+
+    new TestSparkSession(
+      sparkConf.set("spark.hadoop.fs.file.impl", classOf[DebugFilesystem].getName),
+      Some(extensions))
+  }
+
   test("read protocol ignores uncommitted jobs") {
     withTempDir { dir =>
       create(dir, "_started_12345")

@@ -6,14 +6,15 @@
  * License, Version 2.0, a copy of which you may obtain at
  * http://www.apache.org/licenses/LICENSE-2.0
  */
-package com.databricks.sql.acl
+package com.databricks.sql.parser
 
-import com.databricks.sql.acl.AclCommandBaseParser._
+import com.databricks.sql.acl.AclClient
+import com.databricks.sql.parser.DatabricksSqlBaseParser._
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.atn.PredictionMode
 import org.antlr.v4.runtime.misc.ParseCancellationException
 
-import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.{AnalysisException, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.parser._
@@ -25,9 +26,9 @@ import org.apache.spark.sql.types.DataType
  * Parser for ACL related commands. The parser passes the query to an underlying (more complete)
  * parser if it cannot parse the query.
  */
-class AclCommandParser(client: AclClient, delegate: ParserInterface) extends ParserInterface {
+class DatabricksSqlParser(client: AclClient, delegate: ParserInterface) extends ParserInterface {
 
-  val builder = new AstCommandBuilder(client)
+  val builder = new DatabricksSqlCommandBuilder(client)
 
   override def parseDataType(sqlText: String): DataType =
     delegate.parseDataType(sqlText)
@@ -46,13 +47,13 @@ class AclCommandParser(client: AclClient, delegate: ParserInterface) extends Par
     }
   }
 
-  protected def parse[T](command: String)(toResult: AclCommandBaseParser => T): T = {
-    val lexer = new AclCommandBaseLexer(new ANTLRNoCaseStringStream(command))
+  protected def parse[T](command: String)(toResult: DatabricksSqlBaseParser => T): T = {
+    val lexer = new DatabricksSqlBaseLexer(new ANTLRNoCaseStringStream(command))
     lexer.removeErrorListeners()
     lexer.addErrorListener(ParseErrorListener)
 
     val tokenStream = new CommonTokenStream(lexer)
-    val parser = new AclCommandBaseParser(tokenStream)
+    val parser = new DatabricksSqlBaseParser(tokenStream)
     parser.addParseListener(PostProcessor)
     parser.removeErrorListeners()
     parser.addErrorListener(ParseErrorListener)
@@ -96,7 +97,7 @@ class ANTLRNoCaseStringStream(input: String) extends ANTLRInputStream(input) {
 /**
  * The post-processor validates & cleans-up the parse tree during the parse process.
  */
-case object PostProcessor extends AclCommandBaseBaseListener {
+case object PostProcessor extends DatabricksSqlBaseBaseListener {
 
   /** Remove the back ticks from an Identifier. */
   override def exitQuotedIdentifier(ctx: QuotedIdentifierContext): Unit = {
@@ -121,7 +122,7 @@ case object PostProcessor extends AclCommandBaseBaseListener {
     val token = ctx.getChild(0).getPayload.asInstanceOf[Token]
     parent.addChild(f(new CommonToken(
       new org.antlr.v4.runtime.misc.Pair(token.getTokenSource, token.getInputStream),
-      AclCommandBaseParser.IDENTIFIER,
+      DatabricksSqlBaseParser.IDENTIFIER,
       token.getChannel,
       token.getStartIndex + stripMargins,
       token.getStopIndex - stripMargins)))

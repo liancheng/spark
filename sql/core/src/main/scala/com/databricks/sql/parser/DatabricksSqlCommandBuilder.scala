@@ -6,11 +6,13 @@
  * License, Version 2.0, a copy of which you may obtain at
  * http://www.apache.org/licenses/LICENSE-2.0
  */
-package com.databricks.sql.acl
+package com.databricks.sql.parser
 
 import scala.collection.JavaConverters._
 
-import com.databricks.sql.acl.AclCommandBaseParser._
+import com.databricks.sql.acl._
+import com.databricks.sql.parser.DatabricksSqlBaseParser._
+import com.databricks.sql.transaction.VacuumTableCommand
 
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.parser.{ParseException, ParserUtils}
@@ -19,8 +21,8 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 /**
  * Build an ACL related [[LogicalPlan]] from an ANTLR4 parser tree
  */
-class AstCommandBuilder(client: AclClient)
-  extends AclCommandBaseBaseVisitor[AnyRef] {
+class DatabricksSqlCommandBuilder(client: AclClient)
+  extends DatabricksSqlBaseBaseVisitor[AnyRef] {
   import ParserUtils._
 
   /**
@@ -128,18 +130,18 @@ class AstCommandBuilder(client: AclClient)
    * Create a [[Securable]] object.
    */
   override def visitSecurable(ctx: SecurableContext): Securable = withOrigin(ctx) {
-    Option(ctx.objectType).map(_.getType).getOrElse(AclCommandBaseParser.TABLE) match {
-      case AclCommandBaseParser.CATALOG =>
+    Option(ctx.objectType).map(_.getType).getOrElse(DatabricksSqlBaseParser.TABLE) match {
+      case DatabricksSqlBaseParser.CATALOG =>
         Catalog
-      case AclCommandBaseParser.DATABASE =>
+      case DatabricksSqlBaseParser.DATABASE =>
         Database(ctx.identifier.getText)
-      case AclCommandBaseParser.VIEW | AclCommandBaseParser.TABLE =>
+      case DatabricksSqlBaseParser.VIEW | DatabricksSqlBaseParser.TABLE =>
         Table(visitTableIdentifier(ctx.qualifiedName))
-      case AclCommandBaseParser.FUNCTION if ctx.ANONYMOUS != null =>
+      case DatabricksSqlBaseParser.FUNCTION if ctx.ANONYMOUS != null =>
         AnonymousFunction
-      case AclCommandBaseParser.FUNCTION =>
+      case DatabricksSqlBaseParser.FUNCTION =>
         Function(visitFunctionIdentifier(ctx.qualifiedName))
-      case AclCommandBaseParser.FILE =>
+      case DatabricksSqlBaseParser.FILE =>
         AnyFile
       case _ =>
         throw new ParseException("Unknown Securable Object", ctx)
@@ -168,6 +170,21 @@ class AstCommandBuilder(client: AclClient)
         case _ => throw new ParseException(s"Illegal function name ${ctx.getText}", ctx)
       }
     }
+  }
+
+  /**
+   * Create a [[VacuumTable]] logical plan.
+   * Example SQL :
+   * {{{
+   *   VACUUM ('/path/to/dir' | table_name) [RETAIN number HOURS];
+   * }}}
+   */
+  override def visitVacuumTable(
+    ctx: VacuumTableContext): LogicalPlan = withOrigin(ctx) {
+    VacuumTableCommand(
+      Option(ctx.path).map(string),
+      Option(ctx.table).map(visitTableIdentifier),
+      Option(ctx.number).map(_.getText.toDouble))
   }
 
   /**

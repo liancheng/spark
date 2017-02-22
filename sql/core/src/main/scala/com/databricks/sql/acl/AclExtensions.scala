@@ -11,6 +11,7 @@ package com.databricks.sql.acl
 import scala.util.control.NonFatal
 
 import com.databricks.sql.DatabricksStaticSQLConf
+import com.databricks.sql.parser.DatabricksSqlParser
 
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalog.BaseCatalogHooks
@@ -57,7 +58,7 @@ class AclExtensions extends (SparkSessionExtensions => Unit) {
     }
     extensions.injectParser { (session, delegate) =>
       if (isAclEnabled(session)) {
-        new AclCommandParser(client(session), delegate)
+        new DatabricksSqlParser(client(session), delegate)
       } else {
         delegate
       }

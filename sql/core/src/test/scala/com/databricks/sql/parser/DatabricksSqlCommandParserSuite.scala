@@ -6,9 +6,11 @@
  * License, Version 2.0, a copy of which you may obtain at
  * http://www.apache.org/licenses/LICENSE-2.0
  */
-package com.databricks.sql.acl
+package com.databricks.sql.parser
 
+import com.databricks.sql.acl._
 import com.databricks.sql.acl.Action._
+import com.databricks.sql.transaction.VacuumTableCommand
 
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, SimpleCatalystConf, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
@@ -19,7 +21,7 @@ import org.apache.spark.sql.catalyst.parser.{CatalystSqlParser, ParseException}
 import org.apache.spark.sql.catalyst.plans.PlanTest
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
-class AclCommandParseSuite extends PlanTest {
+class DatabricksSqlCommandParserSuite extends PlanTest {
 
   val client = NoOpAclClient
   val catalog = new SessionCatalog(
@@ -27,7 +29,7 @@ class AclCommandParseSuite extends PlanTest {
     FunctionRegistry.builtin,
     SimpleCatalystConf(caseSensitiveAnalysis = false))
 
-  val parser = new AclCommandParser(client, CatalystSqlParser)
+  val parser = new DatabricksSqlParser(client, CatalystSqlParser)
 
   def checkAnswer(query: String, plan: LogicalPlan): Unit = {
     comparePlans(parser.parsePlan(query), plan)
@@ -44,6 +46,7 @@ class AclCommandParseSuite extends PlanTest {
   val testTbl1 = Table(TableIdentifier("tbl1", Option("test")))
   val tbl1 = Table(TableIdentifier("tbl1"))
   val tblCatalog = Table(TableIdentifier("catalog"))
+  val testPath = "/test/path"
 
   val functionReflect = Function(FunctionIdentifier("reflect"))
 
@@ -178,6 +181,30 @@ class AclCommandParseSuite extends PlanTest {
       CleanPermissionsCommand(client, testDb1))
 
     intercept("MSCK REPAIR KEYBOARD bubba PRIVILEGES")
+  }
+
+  test("vacuum") {
+    checkAnswer(
+      s"VACUUM '$testPath'",
+      VacuumTableCommand(Some(testPath), None, None))
+
+    checkAnswer(
+      s"""VACUUM "$testPath" RETAIN 1.25 HOURS""",
+      VacuumTableCommand(Some(testPath), None, Some(1.25)))
+
+    checkAnswer(
+      "VACUUM `tbl1`",
+      VacuumTableCommand(None, Some(tbl1.key), None))
+
+    checkAnswer(
+      "VACUUM test.tbl1 RETAIN 2 HOURS",
+      VacuumTableCommand(None, Some(testTbl1.key), Some(2.0)))
+
+    intercept("VACUUM")
+
+    intercept("VACUUM TABLE `tbl1`")
+
+    intercept(s"VACUUM $testPath") // because the given path is unquoted
   }
 
   test("pass through") {
