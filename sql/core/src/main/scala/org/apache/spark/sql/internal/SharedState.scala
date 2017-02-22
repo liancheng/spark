@@ -20,6 +20,7 @@ package org.apache.spark.sql.internal
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
+import com.databricks.sql.debugger.DatabricksTaskDebugListener
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.{SparkConf, SparkContext, SparkException}
@@ -79,6 +80,12 @@ private[sql] class SharedState(sparkSession: SparkSession) extends Logging {
    * A listener for SQL-specific [[org.apache.spark.scheduler.SparkListenerEvent]]s.
    */
   val listener: SQLListener = createListenerAndUI(sparkContext)
+
+  /**
+   * A listener for cancelling tasks generating excessive output.
+   */
+  val taskDebugListener: DatabricksTaskDebugListener = new DatabricksTaskDebugListener(sparkContext)
+  sparkContext.addSparkListener(taskDebugListener)
 
   /**
    * A catalog that interacts with external systems.

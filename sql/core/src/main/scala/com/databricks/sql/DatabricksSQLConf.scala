@@ -97,8 +97,33 @@ object DatabricksSQLConf {
         "are older than the specified number of milliseconds. Otherwise an extra List is issued.")
       .longConf
       .createWithDefault(5 * 60 * 1000) // 5 minutes
-}
 
+  val TASK_KILLER_OUTPUT_RATIO_THRESHOLD =
+    buildConf("spark.databricks.debug.taskKiller.outputRatioThreshold")
+    .internal()
+    .doc("The maximum allowed ratio of the number of output rows to the number of input rows. " +
+      "Jobs with tasks exceeding this threshold will be cancelled. " +
+      "Use -1 to turn off.")
+    .longConf
+    .createWithDefault(-1L)
+
+  val TASK_KILLER_MIN_TIME = buildConf("spark.databricks.debug.taskKiller.minTimeSecs")
+    .internal()
+    .doc("The minimum execution time (in seconds) of a task before it can be cancelled due " +
+      "to excessive ratio of the number of output rows to the number of input rows.")
+    .longConf
+    .createWithDefault(10L)
+
+  val TASK_KILLER_ERROR_MESSAGE = buildStaticConf("spark.databricks.debug.taskKiller.message")
+    .internal()
+    .doc("The error message to displayed when a task is terminated by DatabricksTaskDebugListener.")
+    .stringConf
+    .createWithDefault("Task ${taskId} in Stage ${stageId} exceeded the maximum allowed ratio of " +
+      "input to output records (1 to ${outputRatio}, max allowed 1 to " +
+      "${outputRatioKillThreshold}); this limit can be modified with configuration parameter " +
+      DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD.key)
+
+}
 
 /**
  * List of static (immutable during runtime) configs for edge features.

@@ -47,7 +47,7 @@ import org.apache.spark.util.{UninterruptibleThread, Utils}
  * Subclasses should *not* create [[SQLContext]]s in the test suite constructor, which is
  * prone to leaving multiple overlapping [[org.apache.spark.SparkContext]]s in the same JVM.
  */
-private[sql] trait SQLTestUtils
+trait SQLTestUtils
   extends SparkFunSuite
   with BeforeAndAfterAll
   with SQLTestData { self =>
