@@ -43,10 +43,9 @@ class STSIntegrationSuite extends IntegrationSuiteBase {
   }
 
   test("roundtrip save and load") {
-    val tableName = s"roundtrip_save_and_load$randomSuffix"
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1))),
       StructType(StructField("a", IntegerType) :: Nil))
-    try {
+    withTempRedshiftTable("roundtrip_save_and_load") { tableName =>
       write(df)
         .option("dbtable", tableName)
         .option("forward_spark_s3_credentials", "false")
@@ -67,9 +66,6 @@ class STSIntegrationSuite extends IntegrationSuiteBase {
       assert(loadedDf.schema.length === 1)
       assert(loadedDf.columns === Seq("a"))
       checkAnswer(loadedDf, Seq(Row(1)))
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 }

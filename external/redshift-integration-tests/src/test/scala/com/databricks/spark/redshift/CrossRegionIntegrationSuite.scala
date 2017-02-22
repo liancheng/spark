@@ -34,8 +34,7 @@ class CrossRegionIntegrationSuite extends IntegrationSuiteBase {
       new AmazonS3Client(new BasicAWSCredentials(AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY))).get
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1)), 1),
       StructType(StructField("foo", IntegerType) :: Nil))
-    val tableName = s"roundtrip_save_and_load_$randomSuffix"
-    try {
+    withTempRedshiftTable("roundtrip_save_and_load") { tableName =>
       write(df)
         .option("dbtable", tableName)
         .option("extracopyoptions", s"region '$bucketRegion'")
@@ -48,9 +47,6 @@ class CrossRegionIntegrationSuite extends IntegrationSuiteBase {
         Thread.sleep(1000)
         assert(DefaultJDBCWrapper.tableExists(conn, tableName))
       }
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 }

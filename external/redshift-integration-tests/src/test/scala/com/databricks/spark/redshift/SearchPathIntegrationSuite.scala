@@ -20,15 +20,13 @@ class SearchPathIntegrationSuite extends IntegrationSuiteBase {
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    conn.prepareStatement(s"drop table if exists $testTable").executeUpdate()
-    conn.commit()
+    jdbcUpdate(s"drop table if exists $testTable")
     createTestDataInRedshift(testTable)
   }
 
   override def afterAll(): Unit = {
     try {
-      conn.prepareStatement(s"drop table if exists $testTable").executeUpdate()
-      conn.commit()
+      jdbcUpdate(s"drop table if exists $testTable")
     } finally {
       super.afterAll()
     }

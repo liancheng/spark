@@ -53,6 +53,6 @@ class AWSCredentialsInUriIntegrationSuite extends IntegrationSuiteBase {
   test("roundtrip save and load") {
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1)), 1),
       StructType(StructField("foo", IntegerType) :: Nil))
-    testRoundtripSaveAndLoad(s"roundtrip_save_and_load_$randomSuffix", df)
+    testRoundtripSaveAndLoad(s"roundtrip_save_and_load", df)
   }
 }

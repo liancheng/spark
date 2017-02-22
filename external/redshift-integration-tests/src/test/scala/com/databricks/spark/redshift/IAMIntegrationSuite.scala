@@ -24,10 +24,9 @@ class IAMIntegrationSuite extends IntegrationSuiteBase {
   private val IAM_ROLE_ARN: String = loadConfigFromEnv("STS_ROLE_ARN")
 
   test("roundtrip save and load") {
-    val tableName = s"iam_roundtrip_save_and_load$randomSuffix"
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1))),
       StructType(StructField("a", IntegerType) :: Nil))
-    try {
+    withTempRedshiftTable("iam_roundtrip_save_and_load") { tableName =>
       write(df)
         .option("dbtable", tableName)
         .option("forward_spark_s3_credentials", "false")
@@ -44,15 +43,11 @@ class IAMIntegrationSuite extends IntegrationSuiteBase {
       assert(loadedDf.schema.length === 1)
       assert(loadedDf.columns === Seq("a"))
       checkAnswer(loadedDf, Seq(Row(1)))
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 
   test("load fails if IAM role cannot be assumed") {
-    val tableName = s"iam_load_fails_if_role_cannot_be_assumed$randomSuffix"
-    try {
+    withTempRedshiftTable("iam_load_fails_if_role_cannot_be_assumed") { tableName =>
       val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1))),
         StructType(StructField("a", IntegerType) :: Nil))
       val err = intercept[SQLException] {
@@ -64,9 +59,6 @@ class IAMIntegrationSuite extends IntegrationSuiteBase {
           .save()
       }
       assert(err.getCause.getMessage.contains("is not authorized to assume IAM Role"))
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 }

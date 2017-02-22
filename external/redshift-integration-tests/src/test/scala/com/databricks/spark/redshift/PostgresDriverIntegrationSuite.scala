@@ -39,6 +39,6 @@ class PostgresDriverIntegrationSuite extends IntegrationSuiteBase {
   test("roundtrip save and load") {
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1)), 1),
       StructType(StructField("foo", IntegerType) :: Nil))
-    testRoundtripSaveAndLoad(s"save_with_one_empty_partition_$randomSuffix", df)
+    testRoundtripSaveAndLoad(s"save_with_one_empty_partition", df)
   }
 }

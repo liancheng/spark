@@ -78,14 +78,9 @@ trait IntegrationSuiteBase
   protected var conn: Connection = _
   protected var sparkSession: SparkSession = _
 
-  def runSql(query: String): Unit = {
-    log.debug("RUNNING: " + Utils.sanitizeQueryText(query))
-    sqlContext.sql(query).collect()
-  }
-
   def jdbcUpdate(query: String): Unit = {
-    log.debug("RUNNING: " + Utils.sanitizeQueryText(query))
-    conn.createStatement.executeUpdate(query)
+    log.debug("JDBC RUNNING: " + Utils.sanitizeQueryText(query))
+    conn.createStatement().executeUpdate(query)
   }
 
   override def beforeAll(): Unit = {
@@ -97,19 +92,14 @@ trait IntegrationSuiteBase
     sc.hadoopConfiguration.set("fs.s3n.awsAccessKeyId", AWS_ACCESS_KEY_ID)
     sc.hadoopConfiguration.set("fs.s3n.awsSecretAccessKey", AWS_SECRET_ACCESS_KEY)
     conn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None)
-    // Disable autocommit due to conflicts with PG JDBC driver:
-    // PG JDBC driver seems to forbid calling explicit commit when autocommit is on,
-    // so lets just make autocommit off everywhere for consistency.
-    conn.setAutoCommit(false)
-    conn.createStatement().executeUpdate(s"create schema if not exists $schemaName")
-    conn.createStatement().execute(s"set search_path to $schemaName, '$$user', public")
-    conn.commit()
+    conn.setAutoCommit(true)
+    jdbcUpdate(s"create schema if not exists $schemaName")
+    jdbcUpdate(s"set search_path to $schemaName, '$$user', public")
   }
 
   override def afterAll(): Unit = {
     try {
-      conn.createStatement().executeUpdate(s"drop schema if exists $schemaName cascade")
-      conn.commit()
+      jdbcUpdate(s"drop schema if exists $schemaName cascade")
       val conf = new Configuration(false)
       conf.set("fs.s3n.awsAccessKeyId", AWS_ACCESS_KEY_ID)
       conf.set("fs.s3n.awsSecretAccessKey", AWS_SECRET_ACCESS_KEY)
@@ -166,7 +156,8 @@ trait IntegrationSuiteBase
   }
 
   protected def createTestDataInRedshift(tableName: String): Unit = {
-    conn.createStatement().executeUpdate(
+    jdbcUpdate(s"drop table if exists $tableName")
+    jdbcUpdate(
       s"""
          |create table $tableName (
          |testbyte int2,
@@ -183,7 +174,7 @@ trait IntegrationSuiteBase
       """.stripMargin
     )
     // scalastyle:off
-    conn.createStatement().executeUpdate(
+    jdbcUpdate(
       s"""
          |insert into $tableName values
          |(null, null, null, null, null, null, null, null, null, null),
@@ -195,7 +186,6 @@ trait IntegrationSuiteBase
          """.stripMargin
     )
     // scalastyle:on
-    conn.commit()
   }
 
   protected def withTempRedshiftTable[T](namePrefix: String)(body: String => T): T = {
@@ -203,8 +193,7 @@ trait IntegrationSuiteBase
     try {
       body(tableName)
     } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
+      jdbcUpdate(s"drop table if exists $tableName")
     }
   }
 
@@ -314,7 +303,7 @@ trait IntegrationSuiteBase
     df: DataFrame,
     expectedSchemaAfterLoad: Option[StructType] = None,
     saveMode: SaveMode = SaveMode.ErrorIfExists): Unit = {
-    try {
+    withTempRedshiftTable(tableName) { tableName =>
       write(df)
         .option("dbtable", tableName)
         .mode(saveMode)
@@ -330,9 +319,6 @@ trait IntegrationSuiteBase
       val loadedDf = read.option("dbtable", tableName).load()
       assert(loadedDf.schema === expectedSchemaAfterLoad.getOrElse(df.schema))
       checkAnswer(loadedDf, df.collect())
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 }

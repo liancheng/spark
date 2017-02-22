@@ -22,8 +22,7 @@ import org.apache.spark.tags.ExtendedRedshiftTest
 class ColumnMetadataSuite extends IntegrationSuiteBase {
 
   test("configuring maxlength on string columns") {
-    val tableName = s"configuring_maxlength_on_string_column_$randomSuffix"
-    try {
+    withTempRedshiftTable("configuring_maxlength_on_string_column") { tableName =>
       val metadata = new MetadataBuilder().putLong("maxlength", 512).build()
       val schema = StructType(
         StructField("x", StringType, metadata = metadata) :: Nil)
@@ -40,15 +39,11 @@ class ColumnMetadataSuite extends IntegrationSuiteBase {
           .mode(SaveMode.Append)
           .save()
       }
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 
   test("configuring compression on columns") {
-    val tableName = s"configuring_compression_on_columns_$randomSuffix"
-    try {
+    withTempRedshiftTable("configuring_compression_on_columns") { tableName =>
       val metadata = new MetadataBuilder().putString("encoding", "LZO").build()
       val schema = StructType(
         StructField("x", StringType, metadata = metadata) :: Nil)
@@ -65,15 +60,11 @@ class ColumnMetadataSuite extends IntegrationSuiteBase {
           s"""(SELECT "column", lower(encoding) FROM pg_table_def WHERE tablename='$tableName')""")
         .load()
       checkAnswer(encodingDF, Seq(Row("x", "lzo")))
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 
   test("configuring comments on columns") {
-    val tableName = s"configuring_comments_on_columns_$randomSuffix"
-    try {
+    withTempRedshiftTable("configuring_comments_on_columns") { tableName =>
       val metadata = new MetadataBuilder().putString("description", "Hello Column").build()
       val schema = StructType(
         StructField("x", StringType, metadata = metadata) :: Nil)
@@ -106,9 +97,6 @@ class ColumnMetadataSuite extends IntegrationSuiteBase {
         .option("dbtable", commentQuery)
         .load()
       checkAnswer(columnDF, Seq(Row("x", "Hello Column")))
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 }

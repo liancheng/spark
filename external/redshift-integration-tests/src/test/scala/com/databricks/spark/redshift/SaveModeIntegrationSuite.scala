@@ -38,7 +38,7 @@ class SaveModeIntegrationSuite extends IntegrationSuiteBase {
 
   test("SaveMode.Overwrite with non-existent table") {
     testRoundtripSaveAndLoad(
-      s"overwrite_non_existent_table$randomSuffix",
+      s"overwrite_non_existent_table",
       sqlContext.createDataFrame(sc.parallelize(Seq(Row(1))),
         StructType(StructField("a", IntegerType) :: Nil)),
       saveMode = SaveMode.Overwrite)

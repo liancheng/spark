@@ -70,7 +70,6 @@ class AdvancedPushdownIntegrationSuite extends IntegrationSuiteBase {
          |(null, 0),
          |(4, 3)
        """.stripMargin)
-    conn.commit()
 
     val df1 = read
       .option("dbtable", test_table1)

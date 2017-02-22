@@ -23,8 +23,7 @@ class RedshiftCredentialsInConfIntegrationSuite extends IntegrationSuiteBase {
   test("roundtrip save and load") {
     val df = sqlContext.createDataFrame(sc.parallelize(Seq(Row(1)), 1),
       StructType(StructField("foo", IntegerType) :: Nil))
-    val tableName = s"roundtrip_save_and_load_$randomSuffix"
-    try {
+    withTempRedshiftTable("roundtrip_save_and_load") { tableName =>
       write(df)
         .option("url", AWS_REDSHIFT_JDBC_URL)
         .option("user", AWS_REDSHIFT_USER)
@@ -40,9 +39,6 @@ class RedshiftCredentialsInConfIntegrationSuite extends IntegrationSuiteBase {
         .load()
       assert(loadedDf.schema === df.schema)
       checkAnswer(loadedDf, df.collect())
-    } finally {
-      conn.prepareStatement(s"drop table if exists $tableName").executeUpdate()
-      conn.commit()
     }
   }
 
