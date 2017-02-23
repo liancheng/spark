@@ -103,5 +103,5 @@ org.apache.spark.scheduler.ExternalClusterManager
 org.apache.spark.deploy.yarn.security.ServiceCredentialProvider
 spark-warehouse
 structured-streaming/*
-install-redshift-jdbc.sh
 kafka-source-initial-offset-version-2.1.0.bin
+install-redshift-jdbc.sh
