@@ -19,7 +19,7 @@ package org.apache.spark.sql.execution.streaming
 
 import java.io._
 import java.nio.charset.StandardCharsets
-import java.util.{ConcurrentModificationException, EnumSet, LinkedHashMap, UUID}
+import java.util.{ConcurrentModificationException, EnumSet, UUID}
 
 import scala.reflect.ClassTag
 
@@ -62,14 +62,6 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
 
   val metadataPath = new Path(path)
   protected val fileManager = createFileManager()
-
-  /**
-   * Cache the latest two batches. [[StreamExecution]] usually just accesses the latest two batches
-   * when committing offsets, this cache will save some file system operations.
-   */
-  private val batchCache = new LinkedHashMap[Long, T](2) {
-    override def removeEldestEntry(e: java.util.Map.Entry[Long, T]): Boolean = size > 2
-  }
 
   if (!fileManager.exists(metadataPath)) {
     fileManager.mkdirs(metadataPath)
@@ -115,7 +107,6 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
    * metadata has already been stored, this method will return `false`.
    */
   override def add(batchId: Long, metadata: T): Boolean = {
-    assert(metadata != null)
     get(batchId).map(_ => false).getOrElse {
       // Only write metadata when the batch has not yet been written
       if (fileManager.isLocalFileSystem) {
@@ -131,7 +122,7 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
             // stream execution thread is stopped by interrupt. Hence, we make sure that
             // "writeBatch" is called on [[UninterruptibleThread]] which allows us to disable
             // interrupts here. Also see SPARK-14131.
-            ut.runUninterruptibly { writeBatch(batchId, metadata) }
+            ut.runUninterruptibly { writeBatch(batchId, metadata, serialize) }
           case _ =>
             throw new IllegalStateException(
               "HDFSMetadataLog.add() on a local file system must be executed on " +
@@ -141,27 +132,24 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
         // For a distributed file system, such as HDFS or S3, if the network is broken, write
         // operations may just hang until timeout. We should enable interrupts to allow stopping
         // the query fast.
-        writeBatch(batchId, metadata)
+        writeBatch(batchId, metadata, serialize)
       }
       true
     }
   }
 
-  private def writeBatchToFile(metadata: T, path: Path): Unit = {
-    val output = fileManager.create(path)
-    try {
-      serialize(metadata, output)
-    } finally {
-      IOUtils.closeQuietly(output)
-    }
-  }
-
-  private def writeTempBatch(metadata: T): Path = {
+  def writeTempBatch(metadata: T, writer: (T, OutputStream) => Unit = serialize): Option[Path] = {
+    var nextId = 0
     while (true) {
       val tempPath = new Path(metadataPath, s".${UUID.randomUUID.toString}.tmp")
       try {
-        writeBatchToFile(metadata, tempPath)
-        return tempPath
+        val output = fileManager.create(tempPath)
+        try {
+          writer(metadata, output)
+          return Some(tempPath)
+        } finally {
+          IOUtils.closeQuietly(output)
+        }
       } catch {
         case e: IOException if isFileAlreadyExistsException(e) =>
           // Failed to create "tempPath". There are two cases:
@@ -176,10 +164,10 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
           // big problem because it requires the attacker must have the permission to write the
           // metadata path. In addition, the old Streaming also have this issue, people can create
           // malicious checkpoint files to crash a Streaming application too.
+          nextId += 1
       }
     }
-    assert(false, "should not happen")
-    null
+    None
   }
 
   /**
@@ -188,22 +176,19 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
    * There may be multiple [[HDFSMetadataLog]] using the same metadata path. Although it is not a
    * valid behavior, we still need to prevent it from destroying the files.
    */
-  private def writeBatch(batchId: Long, metadata: T): Unit = {
-    if (!fileManager.supportsAtomicRename) {
-      // The underlying file system implementation doesn't support atomic rename, so writing to the
-      // target path directly.
-      writeBatchToFile(metadata, batchIdToPath(batchId))
-      batchCache.put(batchId, metadata)
-      return
-    }
-
-    val tempPath = writeTempBatch(metadata)
+  private def writeBatch(batchId: Long, metadata: T, writer: (T, OutputStream) => Unit): Unit = {
+    val tempPath = writeTempBatch(metadata, writer).getOrElse(
+      throw new IllegalStateException(s"Unable to create temp batch file $batchId"))
     try {
       // Try to commit the batch
       // It will fail if there is an existing file (someone has committed the batch)
       logDebug(s"Attempting to write log #${batchIdToPath(batchId)}")
       fileManager.rename(tempPath, batchIdToPath(batchId))
-      batchCache.put(batchId, metadata)
+
+      // SPARK-17475: HDFSMetadataLog should not leak CRC files
+      // If the underlying filesystem didn't rename the CRC file, delete it.
+      val crcPath = new Path(tempPath.getParent(), s".${tempPath.getName()}.crc")
+      if (fileManager.exists(crcPath)) fileManager.delete(crcPath)
     } catch {
       case e: IOException if isFileAlreadyExistsException(e) =>
         // If "rename" fails, it means some other "HDFSMetadataLog" has committed the batch.
@@ -219,11 +204,6 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
     } finally {
       fileManager.delete(tempPath)
     }
-
-    // SPARK-17475: HDFSMetadataLog should not leak CRC files
-    // If the underlying filesystem didn't rename the CRC file, delete it.
-    val crcPath = new Path(tempPath.getParent(), s".${tempPath.getName()}.crc")
-    if (fileManager.exists(crcPath)) fileManager.delete(crcPath)
   }
 
   private def isFileAlreadyExistsException(e: IOException): Boolean = {
@@ -237,7 +217,7 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
    * @return the deserialized metadata in a batch file, or None if file not exist.
    * @throws IllegalArgumentException when path does not point to a batch file.
    */
-  private def get(batchFile: Path): Option[T] = {
+  def get(batchFile: Path): Option[T] = {
     if (fileManager.exists(batchFile)) {
       if (isBatchFile(batchFile)) {
         get(pathToBatchId(batchFile))
@@ -250,10 +230,6 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
   }
 
   override def get(batchId: Long): Option[T] = {
-    if (batchCache.containsKey(batchId)) {
-      return Some(batchCache.get(batchId))
-    }
-
     val batchMetadataFile = batchIdToPath(batchId)
     if (fileManager.exists(batchMetadataFile)) {
       val input = fileManager.open(batchMetadataFile)
@@ -296,6 +272,17 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
   }
 
   /**
+   * Get an array of [FileStatus] referencing batch files.
+   * The array is sorted by most recent batch file first to
+   * oldest batch file.
+   */
+  def getOrderedBatchFiles(): Array[FileStatus] = {
+    fileManager.list(metadataPath, batchFilesFilter)
+      .sortBy(f => pathToBatchId(f.getPath))
+      .reverse
+  }
+
+  /**
    * Removes all the log entry earlier than thresholdBatchId (exclusive).
    */
   override def purge(thresholdBatchId: Long): Unit = {
@@ -305,7 +292,6 @@ class HDFSMetadataLog[T <: AnyRef : ClassTag](sparkSession: SparkSession, path: 
     for (batchId <- batchIds if batchId < thresholdBatchId) {
       val path = batchIdToPath(batchId)
       fileManager.delete(path)
-      batchCache.remove(batchId)
       logTrace(s"Removed metadata log file: $path")
     }
   }
@@ -344,9 +330,6 @@ object HDFSMetadataLog {
     /** Create path, or throw exception if it already exists */
     def create(path: Path): FSDataOutputStream
 
-    /** Wheter the file system supports atomic rename. */
-    def supportsAtomicRename: Boolean = true
-
     /**
      * Atomically rename path, or throw exception if it cannot be done.
      * Should throw FileNotFoundException if srcPath does not exist.
@@ -357,7 +340,7 @@ object HDFSMetadataLog {
     /** Recursively delete a path if it exists. Should not throw exception if file doesn't exist. */
     def delete(path: Path): Unit
 
-    /** Whether the file system is a local FS. */
+    /** Whether the file systme is a local FS. */
     def isLocalFileSystem: Boolean
   }
 
@@ -374,8 +357,6 @@ object HDFSMetadataLog {
     override def list(path: Path, filter: PathFilter): Array[FileStatus] = {
       fc.util.listStatus(path, filter)
     }
-
-    override def supportsAtomicRename: Boolean = true
 
     override def rename(srcPath: Path, destPath: Path): Unit = {
       fc.rename(srcPath, destPath)
@@ -425,8 +406,6 @@ object HDFSMetadataLog {
     override def list(path: Path, filter: PathFilter): Array[FileStatus] = {
       fs.listStatus(path, filter)
     }
-
-    override def supportsAtomicRename: Boolean = false
 
     /**
      * Rename a path. Note that this implementation is not atomic.
