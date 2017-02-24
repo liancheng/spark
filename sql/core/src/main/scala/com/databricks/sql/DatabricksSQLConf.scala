@@ -114,6 +114,13 @@ object DatabricksSQLConf {
     .longConf
     .createWithDefault(10L)
 
+  val TASK_KILLER_MIN_OUTPUT_ROWS = buildConf("spark.databricks.debug.taskKiller.minOutputRows")
+    .internal()
+    .doc("The minimum number of rows that need to be produced by the task before it can be " +
+      "cancelled.")
+    .longConf
+    .createWithDefault(1000L * 1000L)
+
   val TASK_KILLER_ERROR_MESSAGE = buildStaticConf("spark.databricks.debug.taskKiller.message")
     .internal()
     .doc("The error message to displayed when a task is terminated by DatabricksTaskDebugListener.")

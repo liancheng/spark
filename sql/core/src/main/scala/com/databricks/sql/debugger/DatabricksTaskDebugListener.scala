@@ -78,25 +78,28 @@ class DatabricksTaskDebugListener(
         }
       }
 
-      val outputRatio = if (recordsIn > 0) recordsOut / recordsIn else 0
-      checkOutputRatio(outputRatio)
+      checkOutputRatio(recordsIn, recordsOut)
     }
 
     /**
      * Compare running time and output ratio and with the configured limits.
      * If needed, request task cancellation.
      */
-    private def checkOutputRatio(outputRatio: Long): Unit = {
+    private def checkOutputRatio(recordsIn: Long, recordsOut: Long): Unit = {
+      val outputRatio = if (recordsIn > 0) recordsOut / recordsIn else 0
+
       val queryExecution = SQLExecution.getQueryExecution(executionId)
       if (!cancelRequestIssued || launchTime > 0 || queryExecution != null) {
         val minRunningTimeSec = queryExecution.sparkSession.sessionState.conf.getConf(
             DatabricksSQLConf.TASK_KILLER_MIN_TIME)
+        val minOutputRows = queryExecution.sparkSession.sessionState.conf.getConf(
+            DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS)
         val outputRatioKillThreshold = queryExecution.sparkSession.sessionState.conf.getConf(
             DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD)
         val runningTimeSec = (System.currentTimeMillis() - launchTime) / 1000
 
-        if (runningTimeSec > minRunningTimeSec && outputRatioKillThreshold > 0 &&
-            outputRatio > outputRatioKillThreshold) {
+        if (runningTimeSec > minRunningTimeSec && recordsOut >= minOutputRows &&
+            outputRatioKillThreshold > 0 && outputRatio > outputRatioKillThreshold) {
           val errorMsgTemplate = queryExecution.sparkSession.sessionState.conf.getConf(
               DatabricksSQLConf.TASK_KILLER_ERROR_MESSAGE)
           terminateTask(outputRatio, outputRatioKillThreshold, errorMsgTemplate)

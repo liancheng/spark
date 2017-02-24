@@ -16,7 +16,7 @@ import com.databricks.sql.DatabricksSQLConf
 import org.scalatest.concurrent.Eventually
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.QueryTest
+import org.apache.spark.sql.{DataFrame, QueryTest}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.test.{SharedSQLContext, SQLTestUtils}
@@ -27,25 +27,33 @@ class DatabricksTaskDebugListenerSuite
   with SQLTestUtils
   with Eventually {
 
+  import testImplicits._
+
   val CART_PROD_INPUT_SIZE = 100000L
-  var prevKillerOutputRatioThreshold = 0L
+  var prevKillerOutputRatio = 0L
   var prevKillerMinTime = 0L
+  var prevMinOutputRows = 0L
 
   protected override def beforeAll(): Unit = {
     super.beforeAll()
 
-    prevKillerOutputRatioThreshold = spark.sessionState.conf.getConf(
-        DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD)
-    prevKillerMinTime = spark.sessionState.conf.getConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME)
+    val conf = spark.sessionState.conf
 
-    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD, 100L)
-    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME, 5L)
+    prevKillerOutputRatio = conf.getConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD)
+    prevKillerMinTime = conf.getConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME)
+    prevMinOutputRows = conf.getConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS)
+
+    conf.setConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD, 100L)
+    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME, 5L)
+    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, 1000L)
   }
 
   protected override def afterAll(): Unit = {
-    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD,
-        prevKillerOutputRatioThreshold)
-    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME, prevKillerMinTime)
+    val conf = spark.sessionState.conf
+    conf.setConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD, prevKillerOutputRatio)
+    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME, prevKillerMinTime)
+    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, prevMinOutputRows)
+
     super.afterAll()
   }
 
@@ -110,6 +118,29 @@ class DatabricksTaskDebugListenerSuite
         spark.range(0, CART_PROD_INPUT_SIZE, 1).crossJoin(spark.range(0, CART_PROD_INPUT_SIZE, 1))
           .toDF("a", "b").agg(sum("a"), sum("b")).collect()
       }
+    }
+  }
+
+  // Create a query that takes ca. 20 seconds to process (because heartbeats with metrics are send
+  // around 10 seconds apart), but doesn't produce too much output (max 250,000 records) at any
+  // point in execution.
+  def gen20SecQuery: DataFrame = {
+    spark.range(200L).repartition(1).map { x =>
+      // Trickle out 10 rows per second
+      Thread.sleep(100)
+      x
+    }.crossJoin(spark.range(1000L)).toDF("a", "b").agg(sum("a"), sum("b"))
+  }
+
+  test("spark.databricks.debug.taskKiller.minOutputRows = 1000,000 - query is not killed") {
+    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, 1000L * 1000L)
+    gen20SecQuery.collect()
+  }
+
+  test("spark.databricks.debug.taskKiller.minOutputRows = 1000 - the same query is terminated") {
+    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, 1000L)
+    testTaskTermination {
+      gen20SecQuery.collect()
     }
   }
 }
