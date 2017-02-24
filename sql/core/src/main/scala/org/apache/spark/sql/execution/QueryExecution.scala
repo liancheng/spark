@@ -46,7 +46,13 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
   // TODO: Move the planner an optimizer into here from SessionState.
   protected def planner = sparkSession.sessionState.planner
 
-  def assertAnalyzed(): Unit = {
+  private def withFileAccessAudit[T](body: => T): T = {
+    SQLExecution.withFileAccessAudit(sparkSession) {
+      body
+    }
+  }
+
+  def assertAnalyzed(): Unit = withFileAccessAudit {
     try sparkSession.sessionState.analyzer.checkAnalysis(analyzed) catch {
       case e: AnalysisException =>
         val ae = new AnalysisException(e.message, e.line, e.startPosition, Some(analyzed))
@@ -63,22 +69,30 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
 
   lazy val analyzed: LogicalPlan = {
     SparkSession.setActiveSession(sparkSession)
-    sparkSession.sessionState.analyzer.execute(logical)
+    withFileAccessAudit {
+      sparkSession.sessionState.analyzer.execute(logical)
+    }
   }
 
   lazy val withCachedData: LogicalPlan = {
     assertAnalyzed()
     assertSupported()
-    sparkSession.sharedState.cacheManager.useCachedData(analyzed)
+    withFileAccessAudit {
+      sparkSession.sharedState.cacheManager.useCachedData(analyzed)
+    }
   }
 
-  lazy val optimizedPlan: LogicalPlan = sparkSession.sessionState.optimizer.execute(withCachedData)
+  lazy val optimizedPlan: LogicalPlan = withFileAccessAudit {
+    sparkSession.sessionState.optimizer.execute(withCachedData)
+  }
 
   lazy val sparkPlan: SparkPlan = {
     SparkSession.setActiveSession(sparkSession)
     // TODO: We use next(), i.e. take the first plan returned by the planner, here for now,
     //       but we will implement to choose the best plan.
-    planner.plan(ReturnAnswer(optimizedPlan)).next()
+    withFileAccessAudit {
+      planner.plan(ReturnAnswer(optimizedPlan)).next()
+    }
   }
 
   // executedPlan should not be used to initialize any SparkPlan. It should be
@@ -86,7 +100,9 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
   lazy val executedPlan: SparkPlan = prepareForExecution(sparkPlan)
 
   /** Internal version of the RDD. Avoids copies and has no schema */
-  lazy val toRdd: RDD[InternalRow] = executedPlan.execute()
+  lazy val toRdd: RDD[InternalRow] = withFileAccessAudit {
+    executedPlan.execute()
+  }
 
   /**
    * Prepares a planned [[SparkPlan]] for execution by inserting shuffle operations and internal

@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.analysis.UnresolvedRelation
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.plans.logical.{InsertIntoTable, OverwriteOptions}
+import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, DDLUtils}
 import org.apache.spark.sql.execution.datasources.{CreateTable, DataSource, HadoopFsRelation}
 import org.apache.spark.sql.types.StructType
@@ -205,14 +206,16 @@ final class DataFrameWriter[T] private[sql](ds: Dataset[T]) {
    */
   def save(): Unit = {
     assertNotBucketed("save")
-    val dataSource = DataSource(
-      df.sparkSession,
-      className = source,
-      partitionColumns = partitioningColumns.getOrElse(Nil),
-      bucketSpec = getBucketSpec,
-      options = extraOptions.toMap)
+    SQLExecution.withFileAccessAudit(df.sparkSession) {
+      val dataSource = DataSource(
+        df.sparkSession,
+        className = source,
+        partitionColumns = partitioningColumns.getOrElse(Nil),
+        bucketSpec = getBucketSpec,
+        options = extraOptions.toMap)
 
-    dataSource.write(mode, df)
+      dataSource.write(mode, df)
+    }
   }
   /**
    * Inserts the content of the `DataFrame` to the specified table. It requires that

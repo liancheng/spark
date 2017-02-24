@@ -28,6 +28,8 @@ import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd,
 object SQLExecution {
 
   val EXECUTION_ID_KEY = "spark.sql.execution.id"
+  val FILE_ACCESS_KEY = "spark.sql.trust.file"
+  val FILE_ACCESS_ID = "spark.sql.trust.id"
 
   private val _nextExecutionId = new AtomicLong(0)
 
@@ -39,13 +41,33 @@ object SQLExecution {
     executionIdToQueryExecution.get(executionId)
   }
 
+  def withFileAccessAudit[T](
+      sparkSession: SparkSession)(body: => T): T = {
+    val sc = sparkSession.sparkContext
+    val oldExecutionId = sc.getLocalProperty(FILE_ACCESS_ID)
+    if (oldExecutionId == null) {
+      val executionId = SQLExecution.nextExecutionId
+      sc.setLocalProperty(FILE_ACCESS_ID, executionId.toString)
+      sc.setLocalProperty(FILE_ACCESS_KEY, executionId.toString)
+      val r = try {
+        body
+      } finally {
+        sc.setLocalProperty(FILE_ACCESS_ID, null)
+        sc.setLocalProperty(FILE_ACCESS_KEY, null)
+      }
+      r
+    } else {
+      body
+    }
+  }
+
   /**
    * Wrap an action that will execute "queryExecution" to track all Spark jobs in the body so that
    * we can connect them with an execution.
    */
   def withNewExecutionId[T](
       sparkSession: SparkSession,
-      queryExecution: QueryExecution)(body: => T): T = {
+      queryExecution: QueryExecution)(body: => T): T = withFileAccessAudit(sparkSession) {
     val sc = sparkSession.sparkContext
     val oldExecutionId = sc.getLocalProperty(EXECUTION_ID_KEY)
     if (oldExecutionId == null) {
@@ -96,13 +118,19 @@ object SQLExecution {
    * thread from the original one, this method can be used to connect the Spark jobs in this action
    * with the known executionId, e.g., `BroadcastHashJoin.broadcastFuture`.
    */
-  def withExecutionId[T](sc: SparkContext, executionId: String)(body: => T): T = {
+  def withExecutionId[T](sc: SparkContext, executionId: String, fileAccessId: String)
+      (body: => T): T = {
     val oldExecutionId = sc.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+    val oldFileAccessId = sc.getLocalProperty(SQLExecution.FILE_ACCESS_ID)
     try {
+      sc.setLocalProperty(SQLExecution.FILE_ACCESS_KEY, fileAccessId)
+      sc.setLocalProperty(SQLExecution.FILE_ACCESS_ID, fileAccessId)
       sc.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, executionId)
       body
     } finally {
       sc.setLocalProperty(SQLExecution.EXECUTION_ID_KEY, oldExecutionId)
+      sc.setLocalProperty(SQLExecution.FILE_ACCESS_KEY, oldFileAccessId)
+      sc.setLocalProperty(SQLExecution.FILE_ACCESS_ID, oldFileAccessId)
     }
   }
 }

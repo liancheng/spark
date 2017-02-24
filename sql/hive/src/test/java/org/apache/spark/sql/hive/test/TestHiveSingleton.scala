@@ -27,9 +27,15 @@ trait TestHiveSingleton extends SparkFunSuite with BeforeAndAfterAll {
   protected val spark: SparkSession = TestHive.sparkSession
   protected val hiveContext: TestHiveContext = TestHive
 
+  protected override def beforeAll(): Unit = {
+    super.beforeAll()
+    SparkSession.setActiveSession(spark)
+  }
+
   protected override def afterAll(): Unit = {
     try {
       hiveContext.reset()
+      SparkSession.clearActiveSession()
     } finally {
       super.afterAll()
     }

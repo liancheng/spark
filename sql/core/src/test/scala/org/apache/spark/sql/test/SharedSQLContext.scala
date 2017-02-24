@@ -20,8 +20,9 @@ package org.apache.spark.sql.test
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.{DebugFilesystem, SparkConf}
-import org.apache.spark.sql.{SparkSession, SQLContext}
+import org.apache.spark.sql.{CheckedFilesystem, SparkSession, SQLContext}
 
+class CheckedDebugFilesystem extends DebugFilesystem with CheckedFilesystem
 
 /**
  * Helper trait for SQL test suites where all tests share a single [[TestSparkSession]].
@@ -50,7 +51,7 @@ trait SharedSQLContext extends SQLTestUtils with BeforeAndAfterEach {
 
   protected def createSparkSession: TestSparkSession = {
     new TestSparkSession(
-      sparkConf.set("spark.hadoop.fs.file.impl", classOf[DebugFilesystem].getName))
+      sparkConf.set("spark.hadoop.fs.file.impl", classOf[CheckedDebugFilesystem].getName))
   }
 
   /**
@@ -60,6 +61,7 @@ trait SharedSQLContext extends SQLTestUtils with BeforeAndAfterEach {
     SparkSession.sqlListener.set(null)
     if (_spark == null) {
       _spark = createSparkSession
+      SparkSession.setActiveSession(_spark)
     }
     // Ensure we have initialized the context before calling parent code
     super.beforeAll()
@@ -73,6 +75,7 @@ trait SharedSQLContext extends SQLTestUtils with BeforeAndAfterEach {
       if (_spark != null) {
         _spark.stop()
         _spark = null
+        SparkSession.clearActiveSession()
       }
     } finally {
       super.afterAll()

@@ -30,7 +30,7 @@ import org.apache.hadoop.hive.serde2.`lazy`.LazySimpleSerDe
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{SparkSession, SparkSessionExtensions, SQLContext}
+import org.apache.spark.sql.{CheckedFilesystem, SparkSession, SparkSessionExtensions, SQLContext}
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FunctionBuilder
 import org.apache.spark.sql.catalyst.expressions.ExpressionInfo
@@ -41,6 +41,8 @@ import org.apache.spark.sql.hive._
 import org.apache.spark.sql.internal.{SharedState, SQLConf}
 import org.apache.spark.sql.internal.StaticSQLConf.CATALOG_IMPLEMENTATION
 import org.apache.spark.util.{ShutdownHookManager, Utils}
+
+class CheckedFileSystemImpl extends CheckedFilesystem
 
 // SPARK-3729: Test key required to check for initialization errors with config.
 object TestHive
@@ -53,6 +55,7 @@ object TestHive
         .set("spark.sql.hive.metastore.barrierPrefixes",
           "org.apache.spark.sql.hive.execution.PairSerDe")
         .set("spark.sql.warehouse.dir", TestHiveContext.makeWarehouseDir().toURI.getPath)
+        .set("spark.hadoop.fs.file.impl", classOf[CheckedFileSystemImpl].getName)
         // SPARK-8910
         .set("spark.ui.enabled", "false")))
 

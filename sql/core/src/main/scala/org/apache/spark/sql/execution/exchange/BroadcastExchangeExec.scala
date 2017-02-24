@@ -67,11 +67,12 @@ case class BroadcastExchangeExec(
   @transient
   private lazy val relationFuture: Future[broadcast.Broadcast[Any]] = {
     // broadcastFuture is used in "doExecute". Therefore we can get the execution id correctly here.
+    val fileAccessId = sparkContext.getLocalProperty(SQLExecution.FILE_ACCESS_ID)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     Future {
       // This will run in another thread. Set the execution id so that we can connect these jobs
       // with the correct execution.
-      SQLExecution.withExecutionId(sparkContext, executionId) {
+      SQLExecution.withExecutionId(sparkContext, executionId, fileAccessId) {
         try {
           val beforeCollect = System.nanoTime()
           // Note that we use .executeCollect() because we don't want to convert data to Scala types
