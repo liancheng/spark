@@ -13,7 +13,6 @@ import java.io._
 import scala.collection.mutable
 
 import com.databricks.sql.DatabricksSQLConf._
-import com.databricks.sql.acl.NoOpAclClient
 import com.databricks.sql.parser.DatabricksSqlParser
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
@@ -27,7 +26,7 @@ import org.apache.spark.util.{Clock, ManualClock, SystemClock}
 class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContext {
   override def createSparkSession: TestSparkSession = {
     val extensions = new SparkSessionExtensions
-    extensions.injectParser((_, delegate) => new DatabricksSqlParser(NoOpAclClient, delegate))
+    extensions.injectParser((_, delegate) => new DatabricksSqlParser(None, delegate))
 
     new TestSparkSession(
       sparkConf.set("spark.hadoop.fs.file.impl", classOf[DebugFilesystem].getName),

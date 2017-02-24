@@ -58,7 +58,7 @@ class AclExtensions extends (SparkSessionExtensions => Unit) {
     }
     extensions.injectParser { (session, delegate) =>
       if (isAclEnabled(session)) {
-        new DatabricksSqlParser(client(session), delegate)
+        new DatabricksSqlParser(Some(client(session)), delegate)
       } else {
         delegate
       }

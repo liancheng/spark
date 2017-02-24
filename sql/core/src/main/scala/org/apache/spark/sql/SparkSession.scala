@@ -26,6 +26,8 @@ import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 import scala.util.control.NonFatal
 
+import com.databricks.sql.DatabricksExtensions
+
 import org.apache.spark.{SPARK_VERSION, SparkConf, SparkContext}
 import org.apache.spark.annotation.{DeveloperApi, Experimental, InterfaceStability}
 import org.apache.spark.api.java.JavaRDD
@@ -730,7 +732,17 @@ object SparkSession {
 
     private[this] val options = new scala.collection.mutable.HashMap[String, String]
 
-    private[this] val extensions: SparkSessionExtensions = new SparkSessionExtensions
+    private[this] val extensions: SparkSessionExtensions = {
+      val defaultExtensions = new SparkSessionExtensions
+
+      // Enable default Databricks-specific extensions.
+      // Note that user-provided extensions will be stacked on top of these.
+      // For example, if a user-defined extension injects a custom parser, that will result in:
+      // UserParser -> DatabricksParser -> CatalystParser
+      DatabricksExtensions(defaultExtensions)
+
+      defaultExtensions
+    }
 
     private[this] var userSuppliedContext: Option[SparkContext] = None
 

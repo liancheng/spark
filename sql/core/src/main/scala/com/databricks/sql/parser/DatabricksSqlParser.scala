@@ -8,7 +8,7 @@
  */
 package com.databricks.sql.parser
 
-import com.databricks.sql.acl.AclClient
+import com.databricks.sql.acl.{AclClient, AclCommandBuilder}
 import com.databricks.sql.parser.DatabricksSqlBaseParser._
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.atn.PredictionMode
@@ -26,9 +26,13 @@ import org.apache.spark.sql.types.DataType
  * Parser for ACL related commands. The parser passes the query to an underlying (more complete)
  * parser if it cannot parse the query.
  */
-class DatabricksSqlParser(client: AclClient, delegate: ParserInterface) extends ParserInterface {
+class DatabricksSqlParser(aclClient: Option[AclClient], delegate: ParserInterface)
+  extends ParserInterface {
 
-  val builder = new DatabricksSqlCommandBuilder(client)
+  val builder = aclClient match {
+    case Some(client) => new AclCommandBuilder(client)
+    case None => new DatabricksSqlCommandBuilder
+  }
 
   override def parseDataType(sqlText: String): DataType =
     delegate.parseDataType(sqlText)
