@@ -106,7 +106,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("vacuum removes files from failed tasks immediately") {
+  testWithMonotonicClockFs("vacuum removes files from failed tasks immediately") {
     withTempDir { dir =>
       val f1 = "part-r-00001-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
       val f2 = "part-r-00002-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
@@ -143,7 +143,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("vacuum removes uncommitted files after timeout") {
+  testWithMonotonicClockFs("vacuum removes uncommitted files after timeout") {
     withTempDir { dir =>
       val f1 = "part-r-00001-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
       val f2 = "part-r-00002-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
@@ -174,7 +174,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("vacuum removes deleted files after timeout") {
+  testWithMonotonicClockFs("vacuum removes deleted files after timeout") {
     withTempDir { dir =>
       val f1 = "part-r-00001-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
       val f2 = "part-r-00002-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
@@ -205,7 +205,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("zero-length commit markers mean txn is pending") {
+  testWithMonotonicClockFs("zero-length commit markers mean txn is pending") {
     withTempDir { dir =>
       val f1 = "part-r-00001-tid-12345-2dd664f9-d2c4-4ffe-878f-c6c70c1fb0cb-0_00003.csv"
       create(dir, f1)
@@ -337,32 +337,61 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  private def makeFakeTimedFs(clock: Clock): FileSystem = {
-    val fakeFs = new RawLocalFileSystem() {
-      private val creationTimes = mutable.Map[Path, Long]()
+  private class FakeClockFileSystem(clock: Clock) extends RawLocalFileSystem {
+    private val creationTimes = mutable.Map[Path, Long]()
 
-      // override file creation to save our custom timestamps
-      override def create(path: Path): FSDataOutputStream = create(path, false)
-      override def create(path: Path, overwrite: Boolean): FSDataOutputStream = {
-        creationTimes(path.makeQualified(this)) = clock.getTimeMillis()
-        super.create(path, overwrite)
-      }
+    // override file creation to save our custom timestamps
+    override def create(path: Path): FSDataOutputStream = create(path, false)
+    override def create(path: Path, overwrite: Boolean): FSDataOutputStream = {
+      creationTimes(path.makeQualified(this)) = clock.getTimeMillis()
+      super.create(path, overwrite)
+    }
 
-      // fill in our custom timestamps on list
-      override def listStatus(path: Path): Array[FileStatus] = {
-        super.listStatus(path).map { stat =>
-          new FileStatus(
-            stat.getLen,
-            stat.isDir,
-            0,
-            stat.getBlockSize,
-            creationTimes.getOrElse(stat.getPath, stat.getModificationTime),
-            stat.getPath)
-        }
+    // fill in our custom timestamps on list
+    override def listStatus(path: Path): Array[FileStatus] = {
+      super.listStatus(path).map { stat =>
+        new FileStatus(
+          stat.getLen,
+          stat.isDir,
+          0,
+          stat.getBlockSize,
+          creationTimes.getOrElse(stat.getPath, stat.getModificationTime),
+          stat.getPath)
       }
     }
+  }
+
+  private def makeFakeTimedFs(clock: Clock): FileSystem = {
+    val fakeFs = new FakeClockFileSystem(clock)
     fakeFs.initialize(new File("/").toURI, new Configuration())
     fakeFs
+  }
+
+  private class MonotonicSystemClock extends SystemClock {
+    private var lastTime: Long = 0L
+
+    override def getTimeMillis(): Long = synchronized {
+      val time = super.getTimeMillis()
+      if (time < lastTime) {
+        logWarning(s"System clock went back in time: $time < $lastTime")
+        lastTime
+      } else {
+        lastTime = time
+        time
+      }
+    }
+  }
+
+  def testWithMonotonicClockFs(name: String)(runTest: => Unit): Unit = {
+    test(name) {
+      val fakeFs = makeFakeTimedFs(new MonotonicSystemClock)
+      try {
+        DatabricksAtomicReadProtocol.testingFs = Some(fakeFs)
+        runTest
+      } finally {
+        DatabricksAtomicReadProtocol.clock = new SystemClock
+      }
+    }
   }
 
   def withFakeClockAndFs(f: ManualClock => Unit): Unit = {
@@ -468,7 +497,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("vacuum horizon respects sql config") {
+  testWithMonotonicClockFs("vacuum horizon respects sql config") {
     withTempDir { dir =>
       val df = spark.range(10).selectExpr("id", "id as A", "id as B")
       df.write.partitionBy("A", "B").mode("overwrite").parquet(dir.getAbsolutePath)
@@ -482,7 +511,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("auto vacuum respects sql config") {
+  testWithMonotonicClockFs("auto vacuum respects sql config") {
     withTempDir { dir =>
       val df = spark.range(10).selectExpr("id", "id as A", "id as B")
       for (i <- 1 to 2) {
@@ -506,7 +535,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("vacuum table basic") {
+  testWithMonotonicClockFs("vacuum table basic") {
     withTempDir { dir =>
       withTable("testTable") {
         spark.sql(
@@ -521,7 +550,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     }
   }
 
-  test("vacuum table works with custom locations") {
+  testWithMonotonicClockFs("vacuum table works with custom locations") {
     withTempDir { dir =>
       spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
       spark.range(10).repartition(1).write.mode("overwrite").parquet(dir.getAbsolutePath)
@@ -679,7 +708,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
      * not observing them immediately (and possibly not in order).
      */
     var numDeletes = 0
-    val inconsistentFs = new RawLocalFileSystem() {
+    val inconsistentFs = new FakeClockFileSystem(new MonotonicSystemClock) {
       val deletedFiles = mutable.Set[Path]()
 
       def flushDeletes(): Unit = {
