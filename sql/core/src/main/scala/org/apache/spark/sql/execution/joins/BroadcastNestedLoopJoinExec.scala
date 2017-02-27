@@ -412,7 +412,7 @@ case class BroadcastNestedLoopJoinExec(
          |/* evaluate join condition */
          |${be.code}
          |/* test join condition */
-         |if (! (${be.value})) continue;
+         |if (${be.isNull} || !(${be.value})) continue;
        """.stripMargin
     } else {
       ""
