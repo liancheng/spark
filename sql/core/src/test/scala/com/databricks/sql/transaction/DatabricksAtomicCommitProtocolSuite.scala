@@ -752,7 +752,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     def checkVacuum(dir: File, expectedNumDeletes: Int): Unit = {
       inconsistentFs.flushDeletes()  // emulate waiting for many hours here
       val df = spark.sql(s"vacuum '${dir.getAbsolutePath}' retain 0.0 hours")
-        .filter("path not like '%/.%'")
+        .filter("path not like '%.crc%'")
       if (df.count() != expectedNumDeletes) {
         throw new AssertionError(
           "Expected " + expectedNumDeletes + " deletes but got " + df.count())
