@@ -32,8 +32,8 @@ object DatabricksAtomicReadProtocol extends Logging {
 
   import scala.collection.parallel.ThreadPoolTaskSupport
 
-  lazy val tasksupport = new ThreadPoolTaskSupport(
-    ThreadUtils.newDaemonCachedThreadPool("db-atomic-commit-worker", 100))
+  lazy val readPool = new ThreadPoolTaskSupport(
+    ThreadUtils.newDaemonCachedThreadPool("db-atomic-read-worker", 100))
 
   val STARTED_MARKER = "_started_(.*)".r
   val COMMITTED_MARKER = "_committed_(.*)".r
@@ -250,7 +250,7 @@ object DatabricksAtomicReadProtocol extends Logging {
     // Retrieve all file contents in parallel to hide the IO latency.
     val fileContents: Map[TxnId, Try[FileChanges]] = {
       val pcol = filesAndMarkers.par
-      pcol.tasksupport = tasksupport
+      pcol.tasksupport = readPool
       pcol.flatMap { stat =>
         stat.getPath.getName match {
           // We ignore zero-length commit markers (this is a commonly observed symptom of DBFS

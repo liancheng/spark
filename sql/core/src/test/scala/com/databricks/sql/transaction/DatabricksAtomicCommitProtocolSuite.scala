@@ -33,6 +33,15 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       Some(extensions))
   }
 
+  test("auto-vacuum does not deadlock on very large job") {
+    withTempDir { dir =>
+      spark.range(1000).selectExpr("id as a", "id as b")
+        .write.partitionBy("a")
+        .mode("overwrite")
+        .parquet(dir.getAbsolutePath)
+    }
+  }
+
   test("read protocol ignores uncommitted jobs") {
     withTempDir { dir =>
       create(dir, "_started_12345")
