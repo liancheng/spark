@@ -253,9 +253,9 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
   test("reader re-lists directory when files may be missing from the initial list") {
     withTempDir { dir =>
-      var listCount = 0
+      @volatile var listCount = 0
       val fs = new RawLocalFileSystem() {
-        override def listStatus(path: Path): Array[FileStatus] = {
+        override def listStatus(path: Path): Array[FileStatus] = synchronized {
           listCount += 1
           super.listStatus(path)
         }
@@ -311,9 +311,9 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
   test("re-list is avoided after a grace period") {
     withTempDir { dir =>
-      var listCount = 0
+      @volatile var listCount = 0
       val fs = new RawLocalFileSystem() {
-        override def listStatus(path: Path): Array[FileStatus] = {
+        override def listStatus(path: Path): Array[FileStatus] = synchronized {
           listCount += 1
           super.listStatus(path)
         }
@@ -351,13 +351,13 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
     // override file creation to save our custom timestamps
     override def create(path: Path): FSDataOutputStream = create(path, false)
-    override def create(path: Path, overwrite: Boolean): FSDataOutputStream = {
+    override def create(path: Path, overwrite: Boolean): FSDataOutputStream = synchronized {
       creationTimes(path.makeQualified(this)) = clock.getTimeMillis()
       super.create(path, overwrite)
     }
 
     // fill in our custom timestamps on list
-    override def listStatus(path: Path): Array[FileStatus] = {
+    override def listStatus(path: Path): Array[FileStatus] = synchronized {
       super.listStatus(path).map { stat =>
         new FileStatus(
           stat.getLen,
@@ -589,10 +589,10 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
      * Emulates S3 list consistency guarantees. We assume read-after-write for single keys,
      * however a list call is not atomic and so may observe writes out of order.
      */
-    var numLists = 0
+    @volatile var numLists = 0
     val inconsistentFs = new RawLocalFileSystem() {
       val consistentFiles = mutable.Set[Path]()
-      override def listStatus(path: Path): Array[FileStatus] = {
+      override def listStatus(path: Path): Array[FileStatus] = synchronized {
         numLists += 1
         super.listStatus(path).filter { stat =>
           stat.getPath match {
@@ -648,7 +648,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     val clock = new ManualClock(123456789L)
 
     val fakeFs = new RawLocalFileSystem() {
-      override def listStatus(path: Path): Array[FileStatus] = {
+      override def listStatus(path: Path): Array[FileStatus] = synchronized {
         super.listStatus(path).map { stat =>
           new FileStatus(
             stat.getLen,
