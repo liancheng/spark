@@ -21,6 +21,8 @@ import java.io.FileNotFoundException
 
 import scala.collection.mutable
 
+/* FIXME: SC-5838 */
+import com.databricks.sql.transaction.directory.DirectoryAtomicReadProtocol
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 import org.apache.hadoop.mapred.{FileInputFormat, JobConf}
@@ -30,7 +32,6 @@ import org.apache.spark.metrics.source.HiveCatalogMetrics
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{expressions, InternalRow}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.transaction._
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.util.SerializableConfiguration
 
@@ -394,7 +395,7 @@ object PartitioningAwareFileIndex extends Logging {
       // and does not include anything else recursively.
       val statuses = try {
         // This is a hack to inject a filesystem for testing purposes.
-        DatabricksAtomicReadProtocol.testingFs.getOrElse(fs).listStatus(path)
+        DirectoryAtomicReadProtocol.testingFs.getOrElse(fs).listStatus(path)
       } catch {
         case _: FileNotFoundException =>
           logWarning(s"The directory $path was not found. Was it deleted very recently?")
@@ -410,7 +411,7 @@ object PartitioningAwareFileIndex extends Logging {
           case _ =>
             dirs.flatMap(dir => listLeafFiles(dir.getPath, hadoopConf, filter, sessionOpt))
         }
-        val allFiles = DatabricksAtomicReadProtocol.filterDirectoryListing(
+        val allFiles = DirectoryAtomicReadProtocol.filterDirectoryListing(
           fs, path, topLevelFiles) ++ nestedFiles
         if (filter != null) allFiles.filter(f => filter.accept(f.getPath)) else allFiles
       }

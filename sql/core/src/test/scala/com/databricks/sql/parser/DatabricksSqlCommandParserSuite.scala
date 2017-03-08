@@ -8,7 +8,7 @@
  */
 package com.databricks.sql.parser
 
-import com.databricks.sql.transaction.VacuumTableCommand
+import com.databricks.sql.transaction.directory.VacuumTableCommand
 
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.dsl.expressions._

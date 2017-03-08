@@ -24,10 +24,10 @@ import org.apache.spark.sql.internal.{SessionState, SQLConf}
 /**
  * A special [[SparkSession]] prepared for testing.
  */
-private[sql] class TestSparkSession(sc: SparkContext, extensions: Option[SparkSessionExtensions])
+class TestSparkSession(sc: SparkContext, extensions: Option[SparkSessionExtensions])
   extends SparkSession(sc, extensions) { self =>
 
-  private[sql] def this(sc: SparkContext) {
+  def this(sc: SparkContext) {
     this(sc, None)
   }
 
@@ -69,7 +69,7 @@ private[sql] class TestSparkSession(sc: SparkContext, extensions: Option[SparkSe
 }
 
 
-private[sql] object TestSQLContext {
+object TestSQLContext {
 
   /**
    * A map used to store all confs that need to be overridden in sql/core unit tests.

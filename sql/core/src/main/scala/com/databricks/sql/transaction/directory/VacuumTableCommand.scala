@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package com.databricks.sql.transaction
+package com.databricks.sql.transaction.directory
 
 import java.net.URI
 
@@ -25,7 +25,6 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.transaction.DatabricksAtomicCommitProtocol
 import org.apache.spark.sql.types._
 
 case class VacuumTableCommand(
@@ -42,7 +41,7 @@ case class VacuumTableCommand(
     } else {
       getCoveringPaths(sparkSession, table.get)
     }
-    DatabricksAtomicCommitProtocol.vacuum(sparkSession, pathsToVacuum, horizonHours)
+    DirectoryAtomicCommitProtocol.vacuum(sparkSession, pathsToVacuum, horizonHours)
       .map(p => Row(p.toString))
   }
 

@@ -10,7 +10,7 @@ package com.databricks.sql.acl
 
 import com.databricks.sql.acl.Action._
 import com.databricks.sql.parser.DatabricksSqlParser
-import com.databricks.sql.transaction.VacuumTableCommand
+import com.databricks.sql.transaction.directory.VacuumTableCommand
 
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, SimpleCatalystConf, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry

@@ -11,7 +11,7 @@ package com.databricks.sql.parser
 import scala.collection.JavaConverters._
 
 import com.databricks.sql.parser.DatabricksSqlBaseParser._
-import com.databricks.sql.transaction.VacuumTableCommand
+import com.databricks.sql.transaction.directory.VacuumTableCommand
 
 import org.apache.spark.sql.catalyst.{FunctionIdentifier, TableIdentifier}
 import org.apache.spark.sql.catalyst.parser.{ParseException, ParserUtils}

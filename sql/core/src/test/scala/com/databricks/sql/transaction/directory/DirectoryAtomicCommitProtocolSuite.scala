@@ -6,7 +6,7 @@
  * License, Version 2.0, a copy of which you may obtain at
  * http://www.apache.org/licenses/LICENSE-2.0
  */
-package org.apache.spark.sql.transaction
+package com.databricks.sql.transaction.directory
 
 import java.io._
 
@@ -14,6 +14,7 @@ import scala.collection.mutable
 
 import com.databricks.sql.DatabricksSQLConf._
 import com.databricks.sql.parser.DatabricksSqlParser
+import com.databricks.util.{Clock, ManualClock, SystemClock}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs._
 
@@ -21,9 +22,9 @@ import org.apache.spark.{DebugFilesystem, SparkEnv}
 import org.apache.spark.sql.{QueryTest, SparkSessionExtensions}
 import org.apache.spark.sql.execution.datasources.InMemoryFileIndex
 import org.apache.spark.sql.test.{SharedSQLContext, TestSparkSession}
-import org.apache.spark.util.{Clock, ManualClock, SystemClock}
 
-class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContext {
+
+class DirectoryAtomicCommitProtocolSuite extends QueryTest with SharedSQLContext {
   override def createSparkSession: TestSparkSession = {
     val extensions = new SparkSessionExtensions
     extensions.injectParser((_, delegate) => new DatabricksSqlParser(None, delegate))
@@ -268,7 +269,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       // should trigger a re-list since f1 had no associated marker
       val in1 = fs.listStatus(testPath)
       listCount = 0
-      val (out1, _) = DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
+      val (out1, _) = DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
       assert(listCount == 1)
       assert(out1.isCommitted("12345"))  // couldn't find any marker, assumed committed
 
@@ -276,14 +277,14 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       create(dir, "_started_12345")
       listCount = 0
       val in2 = in1
-      val (out2, _) = DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in2)
+      val (out2, _) = DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in2)
       assert(listCount == 1)
       assert(!out2.isCommitted("12345"))  // marker found on the second list
 
       // should NOT trigger a re-list since f1 had an associated marker
       val in3 = fs.listStatus(testPath)
       listCount = 0
-      val (out3, _) = DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in3)
+      val (out3, _) = DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in3)
       assert(listCount == 0)
       assert(!out3.isCommitted("12345"))
 
@@ -292,7 +293,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       create(dir, "_committed_12345", s"""{"added": [], "removed": []}""")
       val in4 = fs.listStatus(testPath)
       listCount = 0
-      val (out4, _) = DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in4)
+      val (out4, _) = DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in4)
       assert(listCount == 0)
       assert(out4.isCommitted("12345"))
 
@@ -302,7 +303,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       val in5 = fs.listStatus(testPath)
       create(dir, f2)
       listCount = 0
-      val (out5, _) = DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in5)
+      val (out5, _) = DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in5)
       assert(listCount == 1)
       assert(out5.isCommitted("12345"))
       assert(out5.isFileCommitted("12345", f2))
@@ -325,23 +326,23 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
 
       try {
         val clock = new ManualClock(System.currentTimeMillis)
-        DatabricksAtomicReadProtocol.clock = clock
+        DirectoryAtomicReadProtocol.clock = clock
 
         // should trigger a re-list since f1 had no associated marker
         val in1 = fs.listStatus(testPath)
         listCount = 0
-        DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
+        DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
         assert(listCount == 1)
 
         clock.advance(3 * 60 * 1000)
-        DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
+        DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
         assert(listCount == 2)
 
         clock.advance(3 * 60 * 1000)
-        DatabricksAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
+        DirectoryAtomicReadProtocol.resolveCommitState(fs, testPath, in1)
         assert(listCount == 2)
       } finally {
-        DatabricksAtomicReadProtocol.clock = new SystemClock
+        DirectoryAtomicReadProtocol.clock = new SystemClock
       }
     }
   }
@@ -395,10 +396,10 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     test(name) {
       val fakeFs = makeFakeTimedFs(new MonotonicSystemClock)
       try {
-        DatabricksAtomicReadProtocol.testingFs = Some(fakeFs)
+        DirectoryAtomicReadProtocol.testingFs = Some(fakeFs)
         runTest
       } finally {
-        DatabricksAtomicReadProtocol.clock = new SystemClock
+        DirectoryAtomicReadProtocol.clock = new SystemClock
       }
     }
   }
@@ -406,13 +407,13 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
   def withFakeClockAndFs(f: ManualClock => Unit): Unit = {
     val clock = new ManualClock(System.currentTimeMillis)
     val fakeFs = makeFakeTimedFs(clock)
-    DatabricksAtomicReadProtocol.clock = clock
-    DatabricksAtomicReadProtocol.testingFs = Some(fakeFs)
+    DirectoryAtomicReadProtocol.clock = clock
+    DirectoryAtomicReadProtocol.testingFs = Some(fakeFs)
     try {
       f(clock)
     } finally {
-      DatabricksAtomicReadProtocol.clock = new SystemClock
-      DatabricksAtomicReadProtocol.testingFs = None
+      DirectoryAtomicReadProtocol.clock = new SystemClock
+      DirectoryAtomicReadProtocol.testingFs = None
     }
   }
 
@@ -615,11 +616,11 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
       withTempDir { dir =>
         spark.range(10).repartition(3).write.mode("overwrite").parquet(dir.getAbsolutePath)
         try {
-          DatabricksAtomicReadProtocol.testingFs = Some(inconsistentFs)
+          DirectoryAtomicReadProtocol.testingFs = Some(inconsistentFs)
           assert(Set(0L, 3L).contains(countFiles(dir)))  // should never see {1, 2}
           assert(countFiles(dir) == 3)
         } finally {
-          DatabricksAtomicReadProtocol.testingFs = None
+          DirectoryAtomicReadProtocol.testingFs = None
         }
       }
 
@@ -631,10 +632,10 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
         val markerPath = new Path(dir.getAbsolutePath, commitMarker).makeQualified(inconsistentFs)
         inconsistentFs.consistentFiles.add(markerPath)
         try {
-          DatabricksAtomicReadProtocol.testingFs = Some(inconsistentFs)
+          DirectoryAtomicReadProtocol.testingFs = Some(inconsistentFs)
           spark.range(10).repartition(3).write.mode("overwrite").parquet(dir.getAbsolutePath)
         } finally {
-          DatabricksAtomicReadProtocol.testingFs = None
+          DirectoryAtomicReadProtocol.testingFs = None
         }
         assert(countFiles(dir) == 3)
       }
@@ -663,15 +664,15 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     fakeFs.initialize(new File("/").toURI, new Configuration())
 
     def checkVacuum(dir: File, horizon: Long, expectedNumDeletes: Int): Unit = {
-      val deleted = DatabricksAtomicCommitProtocol.vacuum0(
+      val deleted = DirectoryAtomicCommitProtocol.vacuum0(
         new Path(dir.getAbsolutePath), horizon, horizon, spark.sparkContext.hadoopConfiguration
       ).filterNot(_.getName.contains(".crc"))
       assert(deleted.length == expectedNumDeletes)
     }
 
     try {
-      DatabricksAtomicReadProtocol.testingFs = Some(fakeFs)
-      DatabricksAtomicReadProtocol.clock = clock
+      DirectoryAtomicReadProtocol.testingFs = Some(fakeFs)
+      DirectoryAtomicReadProtocol.clock = clock
 
       // vacuum of logically deleted files
       withTempDir { dir =>
@@ -700,8 +701,8 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
         assert(countFiles(dir) == 0)
       }
     } finally {
-      DatabricksAtomicReadProtocol.testingFs = None
-      DatabricksAtomicReadProtocol.clock = new SystemClock
+      DirectoryAtomicReadProtocol.testingFs = None
+      DirectoryAtomicReadProtocol.clock = new SystemClock
     }
   }
 
@@ -771,7 +772,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
     // tests that vacuum does not run into any delete race conditions
     for (i <- 1 to 5) {
       try {
-        DatabricksAtomicReadProtocol.testingFs = Some(inconsistentFs)
+        DirectoryAtomicReadProtocol.testingFs = Some(inconsistentFs)
 
         // vacuum of just commit markers
         withTempDir { dir =>
@@ -806,7 +807,7 @@ class DatabricksAtomicCommitProtocolSuite extends QueryTest with SharedSQLContex
           assert(countFiles(dir) == 0)
         }
       } finally {
-        DatabricksAtomicReadProtocol.testingFs = None
+        DirectoryAtomicReadProtocol.testingFs = None
       }
     }
 

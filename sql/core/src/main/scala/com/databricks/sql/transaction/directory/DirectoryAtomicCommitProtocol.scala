@@ -6,25 +6,22 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
-package org.apache.spark.sql.transaction
+package com.databricks.sql.transaction.directory
 
 import java.io._
-import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
 import scala.util.control.NonFatal
 
 import com.databricks.sql.DatabricksSQLConf._
+import com.databricks.util.ThreadUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem => HadoopFileSystem, _}
 import org.apache.hadoop.mapreduce._
-import org.json4s.NoTypeHints
-import org.json4s.jackson.Serialization
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.util.ThreadUtils
 
 /**
  * File commit protocol optimized for cloud storage. Files are written directly to their final
@@ -41,12 +38,13 @@ import org.apache.spark.util.ThreadUtils
  *  Note that this is only atomic per-directory, and that we only provide snapshot isolation and
  *  not serializability.
  */
-class DatabricksAtomicCommitProtocol(jobId: String, path: String)
+class DirectoryAtomicCommitProtocol(jobId: String, path: String)
   extends FileCommitProtocol with Serializable with Logging {
 
+  import DirectoryAtomicCommitProtocol._
+  import DirectoryAtomicReadProtocol._
+
   import FileCommitProtocol._
-  import DatabricksAtomicReadProtocol._
-  import DatabricksAtomicCommitProtocol._
 
   // Globally unique alphanumeric string. We decouple this from jobId for possible future use.
   private val txnId: TxnId = newTxnId()
@@ -202,8 +200,8 @@ class DatabricksAtomicCommitProtocol(jobId: String, path: String)
   }
 }
 
-object DatabricksAtomicCommitProtocol extends Logging {
-  import DatabricksAtomicReadProtocol._
+object DirectoryAtomicCommitProtocol extends Logging {
+  import DirectoryAtomicReadProtocol._
 
   import scala.collection.parallel.ThreadPoolTaskSupport
 

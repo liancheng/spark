@@ -6,9 +6,9 @@
  * http://www.apache.org/licenses/LICENSE-2.0
  */
 
-package org.apache.spark.sql.transaction
+package com.databricks.sql.transaction.directory
 
-import java.io.{File, FileNotFoundException, InputStream, InputStreamReader, IOException, OutputStream}
+import java.io.{FileNotFoundException, InputStream, InputStreamReader, IOException, OutputStream}
 import java.nio.charset.StandardCharsets
 
 import scala.collection.mutable
@@ -16,18 +16,18 @@ import scala.util.Try
 import scala.util.control.NonFatal
 
 import com.databricks.sql.DatabricksSQLConf._
+import com.databricks.util.{Clock, SystemClock, ThreadUtils}
 import org.apache.hadoop.fs._
 import org.json4s.NoTypeHints
 import org.json4s.jackson.Serialization
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
-import org.apache.spark.util.{Clock, SystemClock, ThreadUtils}
 
 /**
- * Read-side support for DatabricksAtomicCommitProtocol.
+ * Read-side support for DirectoryAtomicCommitProtocol.
  */
-object DatabricksAtomicReadProtocol extends Logging {
+object DirectoryAtomicReadProtocol extends Logging {
   type TxnId = String
 
   import scala.collection.parallel.ThreadPoolTaskSupport
@@ -41,11 +41,12 @@ object DatabricksAtomicReadProtocol extends Logging {
 
   private implicit val formats = Serialization.formats(NoTypeHints)
 
-  // Visible for testing.
-  private[spark] var testingFs: Option[FileSystem] = None
+  // Visible because it's used as a hack in PartitioningAwareFileIndex.
+  var testingFs: Option[FileSystem] = None
 
   // Visible for testing.
-  private[spark] var clock: Clock = new SystemClock
+  private[directory] var clock: Clock = new SystemClock
+
 
   /**
    * Given a directory listing, filters out files that are uncommitted. A file is considered
@@ -57,7 +58,9 @@ object DatabricksAtomicReadProtocol extends Logging {
   def filterDirectoryListing(
       fs: FileSystem, dir: Path, initialFiles: Seq[FileStatus]): Seq[FileStatus] = {
     // we use SparkEnv for this escape-hatch flag since this may be called on executors
-    if (!SparkEnv.get.conf.get(DIRECTORY_COMMIT_FILTER_UNCOMMITTED)) {
+    if (!SparkEnv.get.conf.get(
+        DIRECTORY_COMMIT_FILTER_UNCOMMITTED.key,
+        DIRECTORY_COMMIT_FILTER_UNCOMMITTED.defaultValueString).toBoolean) {
       return initialFiles
     }
 
@@ -173,14 +176,16 @@ object DatabricksAtomicReadProtocol extends Logging {
    *   The same issue can occur with data file writes re-ordered after commit marker creation. In
    *   this situation we also must re-list if data files are suspected to be missing.
    */
-  private[transaction] def resolveCommitState(
+  def resolveCommitState(
       fs: FileSystem,
       dir: Path,
       initialFiles: Seq[FileStatus]): (CommitState, Seq[FileStatus]) = {
     val state = resolveCommitState0(fs, dir, initialFiles)
 
     // Optimization: can assume the list request was atomic if the files have not changed recently.
-    val horizonMillis = SparkEnv.get.conf.get(DIRECTORY_COMMIT_WRITE_REORDERING_HORIZON_MS)
+    val horizonMillis = SparkEnv.get.conf.get(
+      DIRECTORY_COMMIT_WRITE_REORDERING_HORIZON_MS.key,
+      DIRECTORY_COMMIT_WRITE_REORDERING_HORIZON_MS.defaultValueString).toLong
 
     if ((state.missingMarkers.nonEmpty || state.missingDataFiles.nonEmpty) &&
           state.lastModified > clock.getTimeMillis - horizonMillis) {
@@ -287,7 +292,9 @@ object DatabricksAtomicReadProtocol extends Logging {
 
             case NonFatal(e) =>
               // we use SparkEnv for this escape-hatch flag since this may be called on executors
-              if (SparkEnv.get.conf.get(DIRECTORY_COMMIT_IGNORE_CORRUPT_MARKERS)) {
+              if (SparkEnv.get.conf.get(
+                  DIRECTORY_COMMIT_IGNORE_CORRUPT_MARKERS.key,
+                  DIRECTORY_COMMIT_IGNORE_CORRUPT_MARKERS.defaultValueString).toBoolean) {
                 logWarning("Failed to read job commit marker: " + stat, e)
                 corruptCommitMarkers.add(txnId)
               } else {
