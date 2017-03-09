@@ -42,12 +42,12 @@ class AWSCredentialsInUriIntegrationSuite extends IntegrationSuiteBase {
     assert(!AWS_SECRET_ACCESS_KEY.contains("/"), "AWS secret key should not contain slash")
     sc = new SparkContext("local", getClass.getSimpleName)
     /* Have to create this schema here, because default read/write from base class use it. */
-    val schemaConn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None)
+    val schemaConn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None, true)
     schemaConn.createStatement().executeUpdate(s"create schema if not exists $schemaName")
     schemaConn.commit()
     schemaConn.close()
     conn = DefaultJDBCWrapper.getConnector(None,
-      jdbcUrl, None, Some(s"$schemaName, '$$user', public"))
+      jdbcUrl, None, true, Some(s"$schemaName, '$$user', public"))
   }
 
   test("roundtrip save and load") {

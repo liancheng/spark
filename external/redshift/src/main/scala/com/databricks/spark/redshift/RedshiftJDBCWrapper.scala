@@ -50,7 +50,7 @@ private[redshift] class JDBCWrapper {
     ExecutionContext.fromExecutorService(Executors.newCachedThreadPool(threadFactory))
   }
 
-  private lazy val redshiftSslCert: File = {
+  private[redshift] lazy val redshiftSslCert: File = {
     val outFile = File.createTempFile("redshift-ssl-ca-cert", ".tmp")
     outFile.deleteOnExit()
     try {
@@ -213,12 +213,14 @@ private[redshift] class JDBCWrapper {
    *                                discover the appropriate driver class.
    * @param url the JDBC url to connect to.
    * @param credentials User credentials
+   * @param autoEnableSSL Whether or not full SSL encryption should be automatically enabled.
    * @param schemaSearchPath Schema search_path to use.
    */
   def getConnector(
       userProvidedDriverClass: Option[String],
       url: String,
       credentials: Option[(String, String)],
+      autoEnableSSL: Boolean,
       schemaSearchPath: Option[String] = None) : Connection = {
     val subprotocol = url.stripPrefix("jdbc:").split(":")(0)
     val driverClass: String = getDriverClass(subprotocol, userProvidedDriverClass)
@@ -250,33 +252,35 @@ private[redshift] class JDBCWrapper {
       properties.setProperty("password", password)
     }
 
-    // We enable SSL by default, unless the user provides any explicit SSL-related settings.
-    if (!(url.contains("?ssl") || url.contains("&ssl"))) {
-      val driverVersion = Utils.classForName(driverClass).getPackage.getImplementationVersion
-      if (driverClass.contains("redshift") &&
-          Utils.compareVersions(driverVersion, "1.1.17.1017") < 0) {
-        // The Redshift driver only started supporting `sslRootCert` since version "1.1.17".
-        // With older drivers the combination of options below results in an uninformative
-        // `GeneralSSLEngine` error.
-        // scalastyle:off
-        throw new RuntimeException(
-          s"""Old version of Redshift JDBC driver detected ($driverVersion), which does not support
-             |the `sslRootCert` option that's needed for auto-enabling full SSL encryption.
-             |The `sslRootCert` option is only supported in versions 1.1.17 and higher.
+    if (autoEnableSSL) {
+      // Auto-enable full SSL encryption, unless the user provides any explicit SSL-related settings
+      if (!(url.contains("?ssl") || url.contains("&ssl"))) {
+        val driverVersion = Utils.classForName(driverClass).getPackage.getImplementationVersion
+        if (driverClass.contains("redshift") &&
+            Utils.compareVersions(driverVersion, "1.1.17.1017") < 0) {
+          // The Redshift driver only started supporting `sslRootCert` since version "1.1.17".
+          // With older drivers the combination of options below results in an uninformative
+          // `GeneralSSLEngine` error.
+          // scalastyle:off
+          throw new RuntimeException(
+            s"""Old version of Redshift JDBC driver detected ($driverVersion), which does not support
+             |the `sslrootcert` option that's needed for auto-enabling full SSL encryption.
+             |The `sslrootcert` option is only supported in versions 1.1.17 and higher.
              |See https://s3.amazonaws.com/redshift-downloads/drivers/Amazon+Redshift+JDBC+Release+Notes.pdf
-             |If you're willing to proceed without SSL, then explicitly disable it by adding
-             |`ssl=false` to your JDBC URL.
+             |To work around this you can provide your own SSL config options as part of the JDBC url,
+             |or simply disable this feature via .option("autoenablessl", "false").
           """.stripMargin)
-        // scalastyle:on
+          // scalastyle:on
+        } else {
+          log.info("Auto-enabling full SSL encryption for JDBC connection to Redshift")
+          properties.setProperty("ssl", "true")
+          properties.setProperty("sslmode", "verify-full")
+          properties.setProperty("sslrootcert", redshiftSslCert.toString)
+        }
       } else {
-        log.info("Auto-enabling full SSL encryption for JDBC connection to Redshift")
-        properties.setProperty("ssl", "true")
-        properties.setProperty("sslMode", "verify-full")
-        properties.setProperty("sslRootCert", redshiftSslCert.toString)
+        log.info("Not auto-enabling full SSL encryption for JDBC connection to Redshift because " +
+          "explicit SSL-related options were detected in the JDBC URL")
       }
-    } else {
-      log.info("Not auto-enabling full SSL encryption for JDBC connection to Redshift because " +
-        "explicit SSL-related options were detected in the JDBC URL")
     }
 
     val conn = driver.connect(url, properties)
@@ -299,7 +303,8 @@ private[redshift] class JDBCWrapper {
     val url = params.jdbcUrl
     val credentials = params.credentials
     val searchPath = params.searchPath
-    getConnector(driverClass, url, credentials, searchPath)
+    val autoEnableSSL = params.autoEnableSSL
+    getConnector(driverClass, url, credentials, autoEnableSSL, searchPath)
   }
 
   /**

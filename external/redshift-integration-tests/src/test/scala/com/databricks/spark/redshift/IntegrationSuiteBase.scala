@@ -91,7 +91,7 @@ trait IntegrationSuiteBase
     sc.hadoopConfiguration.setBoolean("fs.s3n.impl.disable.cache", true)
     sc.hadoopConfiguration.set("fs.s3n.awsAccessKeyId", AWS_ACCESS_KEY_ID)
     sc.hadoopConfiguration.set("fs.s3n.awsSecretAccessKey", AWS_SECRET_ACCESS_KEY)
-    conn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None)
+    conn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None, true)
     conn.setAutoCommit(true)
     jdbcUpdate(s"create schema if not exists $schemaName")
     jdbcUpdate(s"set search_path to $schemaName, '$$user', public")

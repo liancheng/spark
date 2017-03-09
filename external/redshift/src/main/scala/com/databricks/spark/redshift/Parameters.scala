@@ -32,7 +32,8 @@ private[redshift] object Parameters {
     "usestagingtable" -> "true",
     "preactions" -> ";",
     "postactions" -> ";",
-    "singleoutput" -> "false"
+    "singleoutput" -> "false",
+    "autoenablessl" -> "true"
   )
 
   val VALID_TEMP_FORMATS = Set("AVRO", "CSV", "CSV GZIP")
@@ -289,6 +290,13 @@ private[redshift] object Parameters {
      * using to connect to S3 and will forward those credentials to Redshift over JDBC.
      */
     def forwardSparkS3Credentials: Boolean = parameters("forward_spark_s3_credentials").toBoolean
+
+    /**
+     * If true, this library will automatically enable full SSL encryption (sslmode=verify-full)
+     * for the JDBC connection, using a dynamically downloaded server certificate from Amazon, or
+     * a pre-bundled one as a backup in case the download fails.
+     */
+    def autoEnableSSL: Boolean = parameters("autoenablessl").toBoolean
 
     /**
      * Temporary AWS credentials which are passed to Redshift. These only need to be supplied by

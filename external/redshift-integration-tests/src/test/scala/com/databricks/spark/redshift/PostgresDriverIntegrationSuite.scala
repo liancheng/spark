@@ -24,7 +24,7 @@ class PostgresDriverIntegrationSuite extends IntegrationSuiteBase {
   }
 
   test("postgresql driver takes precedence for jdbc:postgresql:// URIs") {
-    val conn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None)
+    val conn = DefaultJDBCWrapper.getConnector(None, jdbcUrl, None, true)
     try {
       // TODO(josh): this is slightly different than what was done in open-source spark-redshift.
       // This is due to conflicting PG driver being pulled in via transitive Spark test deps.
