@@ -90,18 +90,20 @@ class DatabricksTaskDebugListener(
 
       val queryExecution = SQLExecution.getQueryExecution(executionId)
       if (!cancelRequestIssued || launchTime > 0 || queryExecution != null) {
+        val enabled = queryExecution.sparkSession.sessionState.conf.getConf(
+            DatabricksSQLConf.QUERY_WATCHDOG_ENABLED)
         val minRunningTimeSec = queryExecution.sparkSession.sessionState.conf.getConf(
-            DatabricksSQLConf.TASK_KILLER_MIN_TIME)
+            DatabricksSQLConf.QUERY_WATCHDOG_MIN_TIME)
         val minOutputRows = queryExecution.sparkSession.sessionState.conf.getConf(
-            DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS)
+            DatabricksSQLConf.QUERY_WATCHDOG_MIN_OUTPUT_ROWS)
         val outputRatioKillThreshold = queryExecution.sparkSession.sessionState.conf.getConf(
-            DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD)
+            DatabricksSQLConf.QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD)
         val runningTimeSec = (System.currentTimeMillis() - launchTime) / 1000
 
-        if (runningTimeSec > minRunningTimeSec && recordsOut >= minOutputRows &&
-            outputRatioKillThreshold > 0 && outputRatio > outputRatioKillThreshold) {
+        if (enabled && runningTimeSec > minRunningTimeSec && recordsOut >= minOutputRows &&
+            outputRatio > outputRatioKillThreshold) {
           val errorMsgTemplate = queryExecution.sparkSession.sessionState.conf.getConf(
-              DatabricksSQLConf.TASK_KILLER_ERROR_MESSAGE)
+              DatabricksSQLConf.QUERY_WATCHDOG_ERROR_MESSAGE)
           terminateTask(outputRatio, outputRatioKillThreshold, errorMsgTemplate)
         }
       }

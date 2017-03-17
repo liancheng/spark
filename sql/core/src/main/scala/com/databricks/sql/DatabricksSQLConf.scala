@@ -98,38 +98,45 @@ object DatabricksSQLConf {
       .longConf
       .createWithDefault(5 * 60 * 1000) // 5 minutes
 
-  val TASK_KILLER_OUTPUT_RATIO_THRESHOLD =
-    buildConf("spark.databricks.debug.taskKiller.outputRatioThreshold")
+  val QUERY_WATCHDOG_ENABLED =
+    buildConf("spark.databricks.queryWatchdog.enabled")
+    .internal()
+    .doc("When true, a query watchdog that automatically terminates queries with excessive " +
+      "ratio of the number of output rows to the number of input rows is enabled.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD =
+    buildConf("spark.databricks.queryWatchdog.outputRatioThreshold")
     .internal()
     .doc("The maximum allowed ratio of the number of output rows to the number of input rows. " +
-      "Jobs with tasks exceeding this threshold will be cancelled. " +
-      "Use -1 to turn off.")
+      "Queries with tasks exceeding this threshold will be cancelled.")
     .longConf
-    .createWithDefault(-1L)
+    .createWithDefault(100L)
 
-  val TASK_KILLER_MIN_TIME = buildConf("spark.databricks.debug.taskKiller.minTimeSecs")
+  val QUERY_WATCHDOG_MIN_TIME = buildConf("spark.databricks.queryWatchdog.minTimeSecs")
     .internal()
     .doc("The minimum execution time (in seconds) of a task before it can be cancelled due " +
       "to excessive ratio of the number of output rows to the number of input rows.")
     .longConf
     .createWithDefault(10L)
 
-  val TASK_KILLER_MIN_OUTPUT_ROWS = buildConf("spark.databricks.debug.taskKiller.minOutputRows")
+  val QUERY_WATCHDOG_MIN_OUTPUT_ROWS =
+    buildConf("spark.databricks.queryWatchdog.minOutputRows")
     .internal()
     .doc("The minimum number of rows that need to be produced by the task before it can be " +
       "cancelled.")
     .longConf
     .createWithDefault(1000L * 1000L)
 
-  val TASK_KILLER_ERROR_MESSAGE = buildStaticConf("spark.databricks.debug.taskKiller.message")
+  val QUERY_WATCHDOG_ERROR_MESSAGE = buildStaticConf("spark.databricks.queryWatchdog.message")
     .internal()
     .doc("The error message to displayed when a task is terminated by DatabricksTaskDebugListener.")
     .stringConf
     .createWithDefault("Task ${taskId} in Stage ${stageId} exceeded the maximum allowed ratio of " +
       "input to output records (1 to ${outputRatio}, max allowed 1 to " +
       "${outputRatioKillThreshold}); this limit can be modified with configuration parameter " +
-      DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD.key)
-
+      DatabricksSQLConf.QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD.key)
 }
 
 /**

@@ -30,8 +30,9 @@ class DatabricksTaskDebugListenerSuite
   import testImplicits._
 
   val CART_PROD_INPUT_SIZE = 100000L
-  var prevKillerOutputRatio = 0L
-  var prevKillerMinTime = 0L
+  var prevWatchdogEnabled = false
+  var prevWatchdogOutputRatio = 0L
+  var prevWatchdogMinTime = 0L
   var prevMinOutputRows = 0L
 
   protected override def beforeAll(): Unit = {
@@ -39,20 +40,23 @@ class DatabricksTaskDebugListenerSuite
 
     val conf = spark.sessionState.conf
 
-    prevKillerOutputRatio = conf.getConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD)
-    prevKillerMinTime = conf.getConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME)
-    prevMinOutputRows = conf.getConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS)
+    prevWatchdogEnabled = conf.getConf(DatabricksSQLConf.QUERY_WATCHDOG_ENABLED)
+    prevWatchdogOutputRatio = conf.getConf(DatabricksSQLConf.QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD)
+    prevWatchdogMinTime = conf.getConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_TIME)
+    prevMinOutputRows = conf.getConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_OUTPUT_ROWS)
 
-    conf.setConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD, 100L)
-    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME, 5L)
-    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, 1000L)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_ENABLED, true)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD, 100L)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_TIME, 5L)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_OUTPUT_ROWS, 1000L)
   }
 
   protected override def afterAll(): Unit = {
     val conf = spark.sessionState.conf
-    conf.setConf(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD, prevKillerOutputRatio)
-    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_TIME, prevKillerMinTime)
-    conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, prevMinOutputRows)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_ENABLED, prevWatchdogEnabled)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD, prevWatchdogOutputRatio)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_TIME, prevWatchdogMinTime)
+    conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_OUTPUT_ROWS, prevMinOutputRows)
 
     super.afterAll()
   }
@@ -66,7 +70,7 @@ class DatabricksTaskDebugListenerSuite
   def testTaskTermination(sparkOp: => Unit): Unit = {
     try {
       val ex = intercept[SparkException] { sparkOp }
-      assert(ex.getMessage().contains(DatabricksSQLConf.TASK_KILLER_OUTPUT_RATIO_THRESHOLD.key))
+      assert(ex.getMessage().contains(DatabricksSQLConf.QUERY_WATCHDOG_OUTPUT_RATIO_THRESHOLD.key))
     } finally {
       waitForTaskEnd()
     }
@@ -132,13 +136,13 @@ class DatabricksTaskDebugListenerSuite
     }.crossJoin(spark.range(1000L)).toDF("a", "b").agg(sum("a"), sum("b"))
   }
 
-  test("spark.databricks.debug.taskKiller.minOutputRows = 1000,000 - query is not killed") {
-    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, 1000L * 1000L)
+  test("spark.databricks.debug.queryWatchdog.minOutputRows = 1000,000 - query is not killed") {
+    spark.sessionState.conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_OUTPUT_ROWS, 1000L * 1000L)
     gen20SecQuery.collect()
   }
 
-  test("spark.databricks.debug.taskKiller.minOutputRows = 1000 - the same query is terminated") {
-    spark.sessionState.conf.setConf(DatabricksSQLConf.TASK_KILLER_MIN_OUTPUT_ROWS, 1000L)
+  test("spark.databricks.debug.queryWatchdog.minOutputRows = 1000 - the same query is terminated") {
+    spark.sessionState.conf.setConf(DatabricksSQLConf.QUERY_WATCHDOG_MIN_OUTPUT_ROWS, 1000L)
     testTaskTermination {
       gen20SecQuery.collect()
     }
